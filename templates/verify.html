@@ -1,141 +1,218 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6">
-            <!-- Result Header -->
-            <div class="text-center mb-4">
-                {% if 'Verified' in status %}
-                    <div class="display-1 text-success mb-3 animate__animated animate__bounceIn">
-                        <i class="fa-solid fa-circle-check"></i>
-                    </div>
-                    <h2 class="text-success fw-bold">{{ status }}</h2>
-                    {% if medicine and medicine.is_external %}
-                        <div class="mb-3">
-                            <span class="badge bg-success p-2"><i class="fa-solid fa-shield-halved"></i> Global Trusted</span>
-                            <p class="text-muted mt-2">Verified via: <strong>{{ medicine.trust_source }}</strong></p>
-                        </div>
-                    {% else %}
-                        <p class="text-muted">This medicine has been cleared by Aushadhi Vishwas.</p>
-                    {% endif %}
-                {% elif status == 'Unknown External QR Code' or 'Suspicious' in status %}
-                    <div class="display-1 text-warning mb-3 animate__animated animate__pulse animate__infinite">
-                        <i class="fa-solid fa-triangle-exclamation"></i>
-                    </div>
-                    <h2 class="text-warning fw-bold">{{ status }}</h2>
-                    <p class="text-muted">{{ reason }}</p>
-                {% elif status == 'Possible Fake Medicine' or status == 'Fake' %}
-                    <div class="display-1 text-danger mb-3 animate__animated animate__headShake">
-                        <i class="fa-solid fa-skull-crossbones"></i>
-                    </div>
-                    <h2 class="text-danger fw-bold">Possible Fake Medicine</h2>
-                    <p class="text-danger">{{ reason }}</p>
-                {% else %}
-                    <div class="display-1 text-info mb-3 animate__animated animate__pulse animate__infinite">
-                        <i class="fa-solid fa-circle-info"></i>
-                    </div>
-                    <h2 class="text-info fw-bold">{{ status }}</h2>
-                    <p class="text-info">{{ reason }}</p>
-                {% endif %}
-            </div>
+<div style="background: #f0f4f8; min-height: 100vh; padding: 24px 12px;">
+<div style="max-width: 480px; margin: auto;">
 
-            <div class="glass-card mt-3 p-3 text-center">
-                <label class="text-muted small d-block mb-2"><i class="fa-solid fa-code"></i> Raw QR Content</label>
-                <code class="text-dark d-block mb-3" style="word-break: break-all;">{{ medicine.raw_data }}</code>
-                {% if medicine and medicine.raw_data and (medicine.raw_data.startswith('http://') or medicine.raw_data.startswith('https://')) %}
-                    <a href="{{ medicine.raw_data }}" target="_blank" class="btn btn-outline-primary btn-sm">
-                        <i class="fa-solid fa-external-link"></i> Visit Link
-                    </a>
-                {% endif %}
-            </div>
+    <!-- ===== VERIFICATION CARD ===== -->
+    <div style="background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); overflow: hidden; font-family: 'Inter', sans-serif;">
 
-            <!-- Medicine Details Card -->
-            {% if medicine and not is_fake %}
-            <div class="glass-card mt-4 p-4 animate__animated animate__fadeInUp">
-                <h5 class="mb-3"><i class="fa-solid fa-pills text-primary"></i> Medicine Details</h5>
-                <div class="table-responsive">
-                    <table class="table table-sm table-borderless mb-0">
-                        <tbody>
-                            <tr><th class="ps-0 text-muted" style="width: 40%;">Name</th><td class="fw-bold">{{ medicine.name }}</td></tr>
-                            <tr><th class="ps-0 text-muted">Manufacturer</th><td>{{ medicine.manufacturer }}</td></tr>
-                            <tr><th class="ps-0 text-muted">Batch Number</th><td><code>{{ medicine.batch_number }}</code></td></tr>
-                            <tr><th class="ps-0 text-muted">Mfg Date</th><td>{{ medicine.mfg_date }}</td></tr>
-                            <tr><th class="ps-0 text-muted">Expiry Date</th><td class="text-danger fw-bold">{{ medicine.exp_date }}</td></tr>
-                            <tr><th class="ps-0 text-muted">Distributor</th><td>{{ medicine.distributor }}</td></tr>
-                        </tbody>
-                    </table>
+        <!-- TOP HEADER: Logo + QR -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 20px 20px 12px 20px; border-bottom: 1px solid #f1f5f9;">
+            <!-- Aushadhi Vishwas Branding -->
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 42px; height: 42px; background: linear-gradient(135deg, #1d4ed8, #7c3aed); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                    <i class="fa-solid fa-shield-halved" style="color: white; font-size: 1.2rem;"></i>
+                </div>
+                <div>
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #1e293b; line-height: 1.1;">Aushadhi</div>
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #1d4ed8; line-height: 1.1;">Vishwas</div>
+                    <div style="font-size: 0.6rem; color: #64748b; letter-spacing: 0.5px;">MEDICINE AUTHENTICITY</div>
                 </div>
             </div>
-            {% endif %}
-
-            <!-- Digital Ledger Journey -->
-            <div class="glass-card mt-4 p-4 animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
-                <h5 class="mb-3"><i class="fa-solid fa-route"></i> Digital Ledger Journey</h5>
-                <ul class="supply-timeline ps-3">
-                    {% for log in supply_chain %}
-                    <li>
-                        <strong>{{ log.stage }}</strong> <br>
-                        <small class="text-muted">
-                            <i class="fa-solid fa-location-arrow"></i> {{ log.location or 'Factory' }} &nbsp;|&nbsp; 
-                            <i class="fa-solid fa-clock"></i> {{ log.timestamp }}
-                        </small>
-                    </li>
-                    {% endfor %}
-                </ul>
-            </div>
-
-            <!-- Actions -->
-            <div class="mt-4 text-center">
-                {% if ('Unknown' in status or 'Suspicious' in status) and session.get('admin') %}
-                    <button onclick="registerAsTrustedPage('{{ medicine.raw_data }}')" class="btn btn-primary w-100 btn-lg mb-3">
-                        <i class="fa-solid fa-plus-circle"></i> Register as Trusted (Admin)
-                    </button>
-                {% endif %}
-
-                {% if 'Verified' not in status %}
-                    <a href="{{ url_for('complaints', med_name=medicine.name, batch=medicine.batch_number) if medicine else url_for('complaints') }}" class="btn btn-danger w-100 btn-lg mb-3">
-                        <i class="fa-solid fa-paper-plane"></i> Report Counterfeit
-                    </a>
-                {% endif %}
-                <a href="{{ url_for('home') }}" class="btn btn-outline-primary w-100">
-                    <i class="fa-solid fa-house"></i> Return Home
-                </a>
+            <!-- QR Code Display -->
+            <div id="mini-qr" style="width: 70px; height: 70px; border: 1px solid #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #f8fafc;">
+                <i class="fa-solid fa-qrcode" style="font-size: 2.5rem; color: #cbd5e1;"></i>
             </div>
         </div>
-    </div>
+
+        <!-- ===== STATUS BADGE ===== -->
+        <div style="padding: 14px 20px;">
+            {% if 'Verified' in status %}
+            <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #22c55e; color: #166534; background: #f0fdf4; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
+                <i class="fa-solid fa-circle-check" style="color: #22c55e;"></i>
+                This is a Genuine Pack
+            </div>
+            {% elif 'Fake' in status or 'Counterfeit' in status %}
+            <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #ef4444; color: #991b1b; background: #fef2f2; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
+                <i class="fa-solid fa-skull-crossbones" style="color: #ef4444;"></i>
+                Counterfeit Detected — Do Not Use
+            </div>
+            {% elif 'Expired' in status %}
+            <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #f97316; color: #9a3412; background: #fff7ed; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
+                <i class="fa-solid fa-clock-rotate-left" style="color: #f97316;"></i>
+                This Pack Has Expired
+            </div>
+            {% elif 'Suspicious' in status %}
+            <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #eab308; color: #854d0e; background: #fefce8; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
+                <i class="fa-solid fa-triangle-exclamation" style="color: #eab308;"></i>
+                Suspicious — Verify Before Use
+            </div>
+            {% else %}
+            <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #94a3b8; color: #475569; background: #f8fafc; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
+                <i class="fa-solid fa-circle-question" style="color: #94a3b8;"></i>
+                Not Registered in Database
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- ===== MEDICINE NAME ===== -->
+        {% if medicine and medicine.name and medicine.name not in ['Unregistered Product', 'Confirmed Counterfeit', 'Potential Counterfeit'] %}
+        <div style="padding: 0 20px 6px 20px;">
+            <h2 style="font-size: 1.5rem; font-weight: 800; color: #0f172a; margin: 0; line-height: 1.2;">{{ medicine.name }}</h2>
+        </div>
+        {% elif 'Fake' in status %}
+        <div style="padding: 0 20px 6px 20px;">
+            <h2 style="font-size: 1.5rem; font-weight: 800; color: #dc2626; margin: 0;">⛔ Counterfeit Product</h2>
+        </div>
+        {% endif %}
+
+        <!-- ===== DETAILS TABLE ===== -->
+        <div style="padding: 10px 20px 20px 20px;">
+            <table style="width: 100%; border-collapse: collapse;">
+                {% if medicine %}
+                <tbody>
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; width: 44%; vertical-align: top;">Serial Number</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; font-weight: 600; vertical-align: top;">
+                            <span style="font-family: monospace; background: #f8fafc; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">{{ medicine.raw_data if medicine.raw_data else '—' }}</span>
+                        </td>
+                    </tr>
+                    {% if medicine.name and medicine.name not in ['Unregistered Product', 'Confirmed Counterfeit', 'Potential Counterfeit'] %}
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Generic Name</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; vertical-align: top;">{{ medicine.name }}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Brand Name</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; vertical-align: top;">{{ medicine.name }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if medicine.manufacturer and medicine.manufacturer not in ['Unknown', 'Pending Verification', 'N/A'] %}
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Manufacturer</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; vertical-align: top;">
+                            {{ medicine.manufacturer }}
+                            {% if medicine.distributor and medicine.distributor != 'N/A' %}
+                            <br><span style="color:#64748b; font-size:0.8rem;">Dist: {{ medicine.distributor }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if medicine.batch_number and medicine.batch_number not in ['Unknown', 'N/A'] %}
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Batch Number</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; font-weight: 600; vertical-align: top;">{{ medicine.batch_number }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if medicine.mfg_date and medicine.mfg_date != 'N/A' %}
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Date of Manufacturing</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; vertical-align: top;">{{ medicine.mfg_date }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if medicine.exp_date and medicine.exp_date != 'N/A' %}
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Date of Expiry</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; font-weight: 700; vertical-align: top; {% if 'Expired' in status %}color: #dc2626;{% else %}color: #15803d;{% endif %}">
+                            {{ medicine.exp_date }}
+                            {% if 'Expired' in status %}<span style="font-size:0.72rem; background:#fef2f2; color:#dc2626; padding:1px 6px; border-radius:4px; margin-left:4px;">EXPIRED</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if medicine.trust_source and medicine.trust_source not in ['N/A', 'Aushadhi Vishwas Internal DB', 'Counterfeit Filter'] %}
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Verified By</td>
+                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1d4ed8; vertical-align: top;">{{ medicine.trust_source }}</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+                {% else %}
+                <tbody>
+                    <tr>
+                        <td colspan="2" style="padding: 20px 0; text-align: center; color: #94a3b8; font-size: 0.9rem;">
+                            <i class="fa-solid fa-database" style="font-size: 2rem; margin-bottom: 8px; display: block;"></i>
+                            No medicine details found for this QR code.
+                        </td>
+                    </tr>
+                </tbody>
+                {% endif %}
+            </table>
+        </div>
+
+        <!-- ===== SUPPLY CHAIN TIMELINE ===== -->
+        {% if supply_chain %}
+        <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px;">
+            <div style="font-size: 0.78rem; font-weight: 700; color: #64748b; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 12px;">
+                <i class="fa-solid fa-route" style="color: #8b5cf6;"></i> Supply Chain Journey
+            </div>
+            <div style="position: relative; padding-left: 18px; border-left: 2px solid #e2e8f0;">
+                {% for log in supply_chain %}
+                <div style="margin-bottom: 10px; position: relative;">
+                    <div style="position: absolute; left: -24px; top: 3px; width: 10px; height: 10px; background: #3b82f6; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 1.5px #3b82f6;"></div>
+                    <div style="font-size: 0.83rem; font-weight: 600; color: #1e293b;">{{ log.stage }}</div>
+                    <div style="font-size: 0.74rem; color: #94a3b8; margin-top: 1px;">
+                        {% if log.location and log.location != 'Unknown' %}<i class="fa-solid fa-location-dot"></i> {{ log.location }} · {% endif %}
+                        <i class="fa-solid fa-clock"></i> {{ log.timestamp }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ===== FOOTER ACTIONS ===== -->
+        <div style="padding: 16px 20px; border-top: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 10px;">
+            {% if ('Unknown' in status or 'Suspicious' in status) and session.get('admin') %}
+            <button onclick="registerAsTrustedPage('{{ medicine.raw_data }}')"
+                style="background: #1d4ed8; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">
+                <i class="fa-solid fa-plus-circle"></i> Register as Trusted (Admin)
+            </button>
+            {% endif %}
+
+            {% if 'Verified' not in status %}
+            <a href="{{ url_for('complaints', med_name=medicine.name if medicine else '', batch=medicine.batch_number if medicine else '') }}"
+               style="background: #fef2f2; color: #dc2626; border: 1.5px solid #fca5a5; text-decoration: none; padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; font-size: 0.9rem;">
+                <i class="fa-solid fa-flag"></i> Report Counterfeit
+            </a>
+            {% endif %}
+
+            <a href="{{ url_for('home') }}"
+               style="background: #f8fafc; color: #1e293b; border: 1.5px solid #e2e8f0; text-decoration: none; padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; font-size: 0.9rem;">
+                <i class="fa-solid fa-house"></i> Return Home
+            </a>
+        </div>
+
+        <!-- SECURE FOOTER MARK -->
+        <div style="background: #1e293b; padding: 10px 20px; text-align: center;">
+            <span style="color: #64748b; font-size: 0.72rem; letter-spacing: 0.5px;">
+                <i class="fa-solid fa-lock" style="color: #22c55e;"></i>
+                SECURED BY AUSHADHI VISHWAS · BLOCKCHAIN VERIFIED
+            </span>
+        </div>
+
+    </div><!-- end card -->
+</div>
 </div>
 
 <script>
 function registerAsTrustedPage(qrContent) {
-    if(confirm("Register this external product as a trusted medicine?")) {
+    if (confirm("Register this external product as a trusted medicine?")) {
         const name = prompt("Enter Medicine Name:", "Unknown Medicine");
         const manufacturer = prompt("Enter Manufacturer:", "Unknown Manufacturer");
-        
-        if(!name || !manufacturer) return;
-
+        if (!name || !manufacturer) return;
         fetch('/api/onboard_external', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                qr_code_id: qrContent,
-                name: name,
-                manufacturer: manufacturer,
-                batch_number: "EXT-" + Math.floor(Math.random()*10000),
+                qr_code_id: qrContent, name, manufacturer,
+                batch_number: "EXT-" + Math.floor(Math.random() * 10000),
                 mfg_date: new Date().toISOString().split('T')[0],
-                exp_date: "2027-12-31",
-                distributor: "External Onboarded"
+                exp_date: "2027-12-31", distributor: "External Onboarded"
             })
         })
-        .then(res => res.json())
-        .then(data => {
-            if(data.success) {
-                alert("Product registered successfully! Refreshing...");
-                location.reload();
-            } else {
-                alert("Error: " + data.message);
-            }
-        });
+        .then(r => r.json())
+        .then(d => { if (d.success) { alert("Registered!"); location.reload(); } else alert("Error: " + d.message); });
     }
 }
 </script>

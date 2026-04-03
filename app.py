@@ -538,9 +538,23 @@ def complaints():
 
 @app.route('/verify/<path:medicine_id>', methods=['GET'])
 def verify_medicine(medicine_id):
+    from urllib.parse import unquote
     location_coords = request.args.get('location', 'Unknown')
     scanner_type = request.args.get('scannerType', 'Consumer')
     is_damaged = request.args.get('isDamaged') == 'true'
+
+    # --- NORMALIZE medicine_id ---
+    # Decode URL-encoded IDs (e.g., %3A -> : and %2F -> /)
+    medicine_id = unquote(medicine_id)
+
+    # If the scanned QR contains a full URL pointing back to our own /verify/ page,
+    # extract just the QR code ID from the URL path
+    if '/verify/' in medicine_id:
+        medicine_id = medicine_id.split('/verify/')[-1]
+
+    medicine_id = medicine_id.strip('/')
+    # --- END NORMALIZE ---
+
     
     # CHECK BLACKLIST FIRST
     blacklisted = db_execute("SELECT * FROM blacklisted_qrs WHERE qr_code_id = ?", (medicine_id,), fetch="one")
