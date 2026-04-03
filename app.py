@@ -45,9 +45,13 @@ def get_base_url():
 
 # --- UNIFIED DATABASE HANDLER (SQLite <-> Postgres) ---
 def get_db_connection():
-    if DATABASE_URL:
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        # Sanitize for SQLAlchemy/psycopg2 compatibility if needed (postgres -> postgresql)
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
         # PostgreSQL (Supabase)
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(db_url)
         return conn
     else:
         # Local SQLite
@@ -57,7 +61,8 @@ def get_db_connection():
 
 def db_execute(query, params=(), commit=False, fetch="none"):
     """Handles both SQLite (?) and Postgres (%s) syntax variations"""
-    is_postgres = True if DATABASE_URL else False
+    db_url = os.environ.get('DATABASE_URL')
+    is_postgres = True if db_url else False
     
     # Simple syntax translation: SQLite ? -> Postgres %s
     if is_postgres:
@@ -92,7 +97,8 @@ def db_execute(query, params=(), commit=False, fetch="none"):
         conn.close()
 
 def init_db():
-    is_postgres = True if DATABASE_URL else False
+    db_url = os.environ.get('DATABASE_URL')
+    is_postgres = True if db_url else False
     pk_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
     text_type = "TEXT"
     
@@ -207,8 +213,11 @@ def init_db():
         else:
             db_execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", s, commit=True)
 
-# Initialize DB on startup
-init_db()
+# Initialize DB on startup (wrapped to prevent crash if DB unreachable)
+try:
+    init_db()
+except Exception as e:
+    print(f"DATABASE INITIALIZATION FAILED: {e}")
 
 # === ROUTES for Templates ===
 
@@ -283,7 +292,7 @@ def dashboard():
         ORDER BY exp_date ASC
     """
     # SQLite fallback if not on postgres
-    if not DATABASE_URL:
+    if not os.environ.get('DATABASE_URL'):
         expiring_soon_query = """
             SELECT * FROM medicines 
             WHERE date(exp_date) >= date('now') 
@@ -821,33 +830,29 @@ def onboard_external():
     mfg_date = data.get('mfg_date', 'N/A')
     exp_date = data.get('exp_date', 'N/A')
     distributor = data.get('distributor', 'N/A')
-
+    
     if not qr_id:
         return jsonify({"success": False, "message": "Missing QR ID"}), 400
-
-    conn = get_db_connection()
+        
     try:
-        conn.execute('''INSERT OR IGNORE INTO medicines 
+        db_execute('''INSERT OR IGNORE INTO medicines 
                         (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_id))
+                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_id), commit=True)
         
         # Add a supply chain entry for verification
         timestamp = str(datetime.now())
         stage_info = "Manually Verified & Onboarded by Consumer"
         root_hash = generate_hash(f"MANUAL-{qr_id}-{timestamp}")
-        conn.execute('''INSERT OR IGNORE INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
-                        VALUES (?, ?, ?, ?, ?)''', (qr_id, stage_info, timestamp, "0", root_hash))
+        db_execute('''INSERT OR IGNORE INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
+                        VALUES (?, ?, ?, ?, ?)''', (qr_id, stage_info, timestamp, "0", root_hash), commit=True)
         
         # [NEW] Auto-cleanup: Update all existing 'Unknown' logs for this QR to 'Verified'
-        conn.execute("UPDATE scan_logs SET result = 'Verified' WHERE qr_code_id = ? AND result = 'Unknown'", (qr_id,))
-
-        conn.commit()
+        db_execute("UPDATE scan_logs SET result = 'Verified' WHERE qr_code_id = ? AND result = 'Unknown'", (qr_id,), commit=True)
+        
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
