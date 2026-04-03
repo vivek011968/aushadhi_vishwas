@@ -208,12 +208,13 @@ def init_db():
 
     # Global Seeds
     seeds = [
-        ("https://sun.psverify.com/21/G2KTDMHK5", "Rosuvas 10mg", "Sun Pharma", "G2KTDMHK5", "2024-01-01", "2027-12-31", "Global Health Dist", "Government Verified / Sun Pharma portal"),
-        ("QR-EXTERNAL-DRUG-001", "Generic Paracetamol", "HealthCorp Global", "B-9988", "2024-05-10", "2026-05-10", "Express Dist", "WHO Trusted List"),
-        ("https://pfizer.verify/P12345", "Pfizer Vaccine", "Pfizer", "P12345", "2024-01-01", "2026-01-01", "Universal Health", "Pfizer Official Port"),
-        ("https://gsk.verify/G6789", "Augmentin", "GSK", "G6789", "2024-02-15", "2026-02-15", "GSK Supply Chain", "GSK Trust Portal"),
-        ("https://novartis.verify/V9988", "Voltaren", "Novartis", "V9988", "2024-04-10", "2027-04-10", "Novartis Global", "Novartis Secure Portal"),
-        ("QR-ABBOTT-DRUG-555", "Ensure", "Abbott", "AB-555", "2024-03-20", "2025-03-20", "Apollo Pharmacy", "Abbott Direct")
+        # Sun Pharma verified portal - Levipil 500 (Levetiracetam Tablets IP)
+        ("https://sun.psverify.com/21/G2KTDMHK5", "Levipil 500 (Levetiracetam Tablets IP)", "Sun Pharma Laboratories Ltd.", "GTF2298A", "Aug-2024", "Jul-2026", "Sun Pharma Dist. Network", "Government Verified / Sun Pharma portal"),
+        ("QR-EXTERNAL-DRUG-001", "Generic Paracetamol 500mg", "HealthCorp Global", "B-9988", "2024-05-10", "2026-05-10", "Express Dist", "WHO Trusted List"),
+        ("https://pfizer.verify/P12345", "Pfizer Product", "Pfizer India Ltd.", "P12345", "2024-01-01", "2026-01-01", "Universal Health", "Pfizer Official Portal"),
+        ("https://gsk.verify/G6789", "Augmentin 625", "GlaxoSmithKline", "G6789", "2024-02-15", "2026-02-15", "GSK Supply Chain", "GSK Trust Portal"),
+        ("https://novartis.verify/V9988", "Voltaren (Diclofenac)", "Novartis India Ltd.", "V9988", "2024-04-10", "2027-04-10", "Novartis Global", "Novartis Secure Portal"),
+        ("QR-ABBOTT-DRUG-555", "Ensure Powder", "Abbott India", "AB-555", "2024-03-20", "2025-03-20", "Apollo Pharmacy", "Abbott Direct")
     ]
     
     for s in seeds:
@@ -475,6 +476,39 @@ def init_db_cloud():
         return "Database Initialized Successfully. Tables Verified."
     except Exception as e:
         return f"Initialization Failed: {str(e)}"
+
+@app.route('/admin/reseed-global')
+def reseed_global():
+    """Force-update global medicine seeds with corrected data"""
+    try:
+        db_url = os.environ.get('DATABASE_URL')
+        is_postgres = True if db_url else False
+        
+        corrected_seeds = [
+            ("https://sun.psverify.com/21/G2KTDMHK5", "Levipil 500 (Levetiracetam Tablets IP)", "Sun Pharma Laboratories Ltd.", "GTF2298A", "Aug-2024", "Jul-2026", "Sun Pharma Dist. Network", "Government Verified / Sun Pharma portal"),
+            ("QR-EXTERNAL-DRUG-001", "Generic Paracetamol 500mg", "HealthCorp Global", "B-9988", "2024-05-10", "2026-05-10", "Express Dist", "WHO Trusted List"),
+            ("https://pfizer.verify/P12345", "Pfizer Product", "Pfizer India Ltd.", "P12345", "2024-01-01", "2026-01-01", "Universal Health", "Pfizer Official Portal"),
+            ("https://gsk.verify/G6789", "Augmentin 625", "GlaxoSmithKline", "G6789", "2024-02-15", "2026-02-15", "GSK Supply Chain", "GSK Trust Portal"),
+            ("https://novartis.verify/V9988", "Voltaren (Diclofenac)", "Novartis India Ltd.", "V9988", "2024-04-10", "2027-04-10", "Novartis Global", "Novartis Secure Portal"),
+            ("QR-ABBOTT-DRUG-555", "Ensure Powder", "Abbott India", "AB-555", "2024-03-20", "2025-03-20", "Apollo Pharmacy", "Abbott Direct")
+        ]
+        
+        for s in corrected_seeds:
+            if is_postgres:
+                db_execute("""INSERT INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) 
+                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                              ON CONFLICT (qr_code_id) DO UPDATE SET 
+                                name=EXCLUDED.name, manufacturer=EXCLUDED.manufacturer, 
+                                batch_number=EXCLUDED.batch_number, mfg_date=EXCLUDED.mfg_date,
+                                exp_date=EXCLUDED.exp_date, distributor=EXCLUDED.distributor,
+                                trust_source=EXCLUDED.trust_source""", s, commit=True)
+            else:
+                db_execute("DELETE FROM global_medicines WHERE qr_code_id = ?", (s[0],), commit=True)
+                db_execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", s, commit=True)
+        
+        return "Global medicines reseeded with corrected data successfully!"
+    except Exception as e:
+        return f"Reseed Failed: {str(e)}"
 
 @app.route('/history')
 def history():
