@@ -38,6 +38,12 @@
                             <a href="{{ url_for('register_medicine' if is_public else 'generate_qr') }}" class="btn btn-outline-secondary">Register Another</a>
                         </div>
                         {% else %}
+                            {% if error %}
+                            <div class="alert alert-danger mt-3 text-center">
+                                <h5><i class="fa-solid fa-circle-exclamation"></i> Error</h5>
+                                <p>{{ error }}</p>
+                            </div>
+                            {% endif %}
                         <form method="POST">
                             <div class="row">
                                 <div class="col-md-6 mb-3">

@@ -72,8 +72,7 @@ def db_execute(query, params=(), commit=False, fetch="none"):
             # Note: This requires the table to have a unique constraint/primary key being hit
             # We handle common cases here; complex ones should be handled manually
             query = query.replace("INSERT OR IGNORE", "INSERT") + " ON CONFLICT DO NOTHING"
-        if "INSERT OR REPLACE" in query:
-            query = query.replace("INSERT OR REPLACE", "INSERT") + " ON CONFLICT DO UPDATE"
+        # Removed broken generic "INSERT OR REPLACE" -> Postgres translation (requires SET clause)
 
     conn = get_db_connection()
     try:
@@ -93,6 +92,15 @@ def db_execute(query, params=(), commit=False, fetch="none"):
         if commit:
             conn.commit()
         return result
+    except Exception as e:
+        print(f"DATABASE ERROR: {e}")
+        print(f"QUERY: {query}")
+        print(f"PARAMS: {params}")
+        try:
+            conn.rollback()
+        except:
+            pass
+        raise e
     finally:
         conn.close()
 
@@ -360,15 +368,19 @@ def generate_qr():
         stage_info = f"Manufactured. Sent to Distributor: {distributor}"
         root_hash = generate_hash(f"ROOT-{qr_code_id}-{timestamp}")
         
-        db_execute('''INSERT INTO medicines 
-                        (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
-        
-        # Initial supply chain record (Genesis Block)
-        db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
-                        VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
-        
+        try:
+            db_execute('''INSERT INTO medicines 
+                            (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                         (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
+            
+            # Initial supply chain record (Genesis Block)
+            db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
+                            VALUES (?, ?, ?, ?, ?)''', (qr_id if 'qr_id' in locals() else qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
+        except Exception as e:
+            print(f"Generate QR Error: {e}")
+            return render_template('generate_qr.html', error="Failed to register medicine. Could be a duplicate ID.")
+            
         # Determine the base URL for the QR code
         base_url = get_base_url()
         
@@ -396,15 +408,19 @@ def register_medicine():
         stage_info = f"Manufactured. Sent to Distributor: {distributor}"
         root_hash = generate_hash(f"ROOT-{qr_code_id}-{timestamp}")
         
-        db_execute('''INSERT INTO medicines 
-                        (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
-        
-        # Initial supply chain record (Genesis Block)
-        db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
-                        VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
-        
+        try:
+            db_execute('''INSERT INTO medicines 
+                            (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                         (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
+            
+            # Initial supply chain record (Genesis Block)
+            db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
+                            VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
+        except Exception as e:
+            print(f"Register Medicine Error: {e}")
+            return render_template('generate_qr.html', error="Failed to register medicine. Could be a duplicate.", is_public=True)
+            
         base_url = get_base_url()
         
         return render_template('generate_qr.html', success=True, qr_code_id=qr_code_id, base_url=base_url, is_public=True)
