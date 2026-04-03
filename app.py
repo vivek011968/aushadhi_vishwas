@@ -418,8 +418,12 @@ def register_medicine():
             db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
                             VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
         except Exception as e:
-            print(f"Register Medicine Error: {e}")
-            return render_template('generate_qr.html', error="Failed to register medicine. Could be a duplicate.", is_public=True)
+            # More descriptive error for debugging (will show in the alert)
+            err_msg = str(e)
+            print(f"Register Medicine Error: {err_msg}")
+            if "relation" in err_msg.lower() and "does not exist" in err_msg.lower():
+                return render_template('generate_qr.html', error="Tables missing in database! Please visit [your_app_url]/admin/init-db-cloud to set them up.", is_public=True)
+            return render_template('generate_qr.html', error=f"Register failed: {err_msg}", is_public=True)
             
         base_url = get_base_url()
         
@@ -462,6 +466,14 @@ def manage_medicines():
     
     medicines = db_execute('SELECT * FROM medicines ORDER BY id DESC', fetch="all")
     return render_template('manage_medicines.html', medicines=medicines)
+
+@app.route('/admin/init-db-cloud')
+def init_db_cloud():
+    try:
+        init_db()
+        return "Database Initialized Successfully. Tables Verified."
+    except Exception as e:
+        return f"Initialization Failed: {str(e)}"
 
 @app.route('/history')
 def history():
