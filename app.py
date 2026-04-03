@@ -1,5 +1,8 @@
 import sqlite3
 import os
+import psycopg2
+from psycopg2.extras import DictCursor
+from urllib.parse import urlparse
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, Response
 from datetime import datetime
 import socket
@@ -23,7 +26,14 @@ def generate_hash(data_str):
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_health_key')
-DB_FILE = 'database.db'
+
+# On Vercel, the filesystem is read-only, so we must use /tmp for the database
+# If a DATABASE_URL is found, we use Supabase (PostgreSQL)
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if os.environ.get('VERCEL_URL') and not DATABASE_URL:
+    DB_FILE = '/tmp/database.db'
+else:
+    DB_FILE = 'database.db'
 
 def get_base_url():
     # If on Vercel, use the provided environment variable
@@ -33,28 +43,79 @@ def get_base_url():
     local_ip = get_local_ip()
     return f"http://{local_ip}:5000/"
 
+# --- UNIFIED DATABASE HANDLER (SQLite <-> Postgres) ---
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    if DATABASE_URL:
+        # PostgreSQL (Supabase)
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    else:
+        # Local SQLite
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def db_execute(query, params=(), commit=False, fetch="none"):
+    """Handles both SQLite (?) and Postgres (%s) syntax variations"""
+    is_postgres = True if DATABASE_URL else False
+    
+    # Simple syntax translation: SQLite ? -> Postgres %s
+    if is_postgres:
+        query = query.replace('?', '%s')
+        # PostgreSQL doesn't support "INSERT OR IGNORE" directly - convert simple cases
+        if "INSERT OR IGNORE" in query:
+            # Note: This requires the table to have a unique constraint/primary key being hit
+            # We handle common cases here; complex ones should be handled manually
+            query = query.replace("INSERT OR IGNORE", "INSERT") + " ON CONFLICT DO NOTHING"
+        if "INSERT OR REPLACE" in query:
+            query = query.replace("INSERT OR REPLACE", "INSERT") + " ON CONFLICT DO UPDATE"
+
+    conn = get_db_connection()
+    try:
+        if is_postgres:
+            cur = conn.cursor(cursor_factory=DictCursor)
+        else:
+            cur = conn.cursor()
+            
+        cur.execute(query, params)
+        
+        result = None
+        if fetch == "all":
+            result = cur.fetchall()
+        elif fetch == "one":
+            result = cur.fetchone()
+            
+        if commit:
+            conn.commit()
+        return result
+    finally:
+        conn.close()
 
 def init_db():
-    conn = get_db_connection()
-    c = conn.cursor()
+    is_postgres = True if DATABASE_URL else False
+    pk_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    text_type = "TEXT"
+    
+    # SQL logic for both
     # Users (Admin) table
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    db_execute(f'''CREATE TABLE IF NOT EXISTS users (
+                    id {pk_type},
                     username TEXT UNIQUE NOT NULL,
                     password TEXT NOT NULL
-                 )''')
-    # Admin default login (SIH Security Level: Hashed)
+                 )''', commit=True)
+                 
+    # Admin default login
     admin_pass = generate_password_hash('admin123')
-    c.execute("INSERT OR IGNORE INTO users (username, password) VALUES ('admin', ?)", (admin_pass,))
-    c.execute("UPDATE users SET password = ? WHERE username = 'admin'", (admin_pass,))
+    if is_postgres:
+        db_execute("INSERT INTO users (username, password) VALUES ('admin', %s) ON CONFLICT (username) DO NOTHING", (admin_pass,), commit=True)
+    else:
+        db_execute("INSERT OR IGNORE INTO users (username, password) VALUES ('admin', ?)", (admin_pass,), commit=True)
+        db_execute("UPDATE users SET password = ? WHERE username = 'admin'", (admin_pass,), commit=True)
     
-    # Medicines table
-    c.execute('''CREATE TABLE IF NOT EXISTS medicines (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    # Create other tables
+    tables = [
+        f'''CREATE TABLE IF NOT EXISTS medicines (
+                    id {pk_type},
                     name TEXT NOT NULL,
                     manufacturer TEXT NOT NULL,
                     batch_number TEXT NOT NULL,
@@ -62,66 +123,47 @@ def init_db():
                     exp_date TEXT NOT NULL,
                     distributor TEXT NOT NULL,
                     qr_code_id TEXT UNIQUE NOT NULL
-                 )''')
-
-    # Supply Chain table (Simulated Blockchain)
-    c.execute('''CREATE TABLE IF NOT EXISTS supply_chain (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS supply_chain (
+                    id {pk_type},
                     qr_code_id TEXT NOT NULL,
                     stage TEXT NOT NULL,
                     location TEXT,
                     timestamp TEXT NOT NULL,
                     previous_hash TEXT,
                     current_hash TEXT
-                 )''')
-
-    # Migration: Add hash columns if they don't exist in an old DB
-    try:
-        c.execute("ALTER TABLE supply_chain ADD COLUMN previous_hash TEXT")
-        c.execute("ALTER TABLE supply_chain ADD COLUMN current_hash TEXT")
-    except sqlite3.OperationalError:
-        pass # Columns already exist
-
-    # Scan Logs table
-    c.execute('''CREATE TABLE IF NOT EXISTS scan_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS scan_logs (
+                    id {pk_type},
                     qr_code_id TEXT NOT NULL,
                     location TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
                     result TEXT NOT NULL,
                     scanner_type TEXT NOT NULL
-                 )''')
-
-    # Complaints table
-    c.execute('''CREATE TABLE IF NOT EXISTS complaints (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS complaints (
+                    id {pk_type},
                     medicine_name TEXT,
                     batch_number TEXT,
                     location TEXT,
                     description TEXT,
                     timestamp TEXT NOT NULL
-                 )''')
-
-    # Fake Alerts table
-    c.execute('''CREATE TABLE IF NOT EXISTS fake_alerts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS fake_alerts (
+                    id {pk_type},
                     qr_code_id TEXT NOT NULL,
                     location TEXT NOT NULL,
                     reason TEXT NOT NULL,
                     timestamp TEXT NOT NULL
-                 )''')
-
-    # Blacklisted QR Codes (Admin explicitly marked as Fake)
-    c.execute('''CREATE TABLE IF NOT EXISTS blacklisted_qrs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS blacklisted_qrs (
+                    id {pk_type},
                     qr_code_id TEXT UNIQUE NOT NULL,
                     reason TEXT,
                     timestamp TEXT NOT NULL
-                 )''')
-
-    # Global Trusted Database table (Simulated Govt/Global DB)
-    c.execute('''CREATE TABLE IF NOT EXISTS global_medicines (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS global_medicines (
+                    id {pk_type},
                     qr_code_id TEXT UNIQUE NOT NULL,
                     name TEXT NOT NULL,
                     manufacturer TEXT NOT NULL,
@@ -130,42 +172,43 @@ def init_db():
                     exp_date TEXT NOT NULL,
                     distributor TEXT NOT NULL,
                     trust_source TEXT NOT NULL
-                 )''')
-
-    # Seed some sample "External Verified" data (like the one in user's scan)
-    c.execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              ("https://sun.psverify.com/21/G2KTDMHK5", "Rosuvas 10mg", "Sun Pharma", "G2KTDMHK5", "2024-01-01", "2027-12-31", "Global Health Dist", "Government Verified / Sun Pharma portal"))
+                 )'''
+    ]
     
-    c.execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              ("QR-EXTERNAL-DRUG-001", "Generic Paracetamol", "HealthCorp Global", "B-9988", "2024-05-10", "2026-05-10", "Express Dist", "WHO Trusted List"))
-
-    # Additional Global Seed Data
-    c.execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              ("https://pfizer.verify/P12345", "Pfizer Vaccine", "Pfizer", "P12345", "2024-01-01", "2026-01-01", "Universal Health", "Pfizer Official Port"))
-
-    c.execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              ("https://gsk.verify/G6789", "Augmentin", "GSK", "G6789", "2024-02-15", "2026-02-15", "GSK Supply Chain", "GSK Trust Portal"))
-
-    c.execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              ("https://novartis.verify/V9988", "Voltaren", "Novartis", "V9988", "2024-04-10", "2027-04-10", "Novartis Global", "Novartis Secure Portal"))
-
-    c.execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              ("QR-ABBOTT-DRUG-555", "Ensure", "Abbott", "AB-555", "2024-03-20", "2025-03-20", "Apollo Pharmacy", "Abbott Direct"))
+    for t in tables:
+        db_execute(t, commit=True)
 
     # Performance Indexes
-    c.execute("CREATE INDEX IF NOT EXISTS idx_med_qr ON medicines(qr_code_id)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_global_qr ON global_medicines(qr_code_id)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_scan_qr ON scan_logs(qr_code_id)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_supply_qr ON supply_chain(qr_code_id)")
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_med_qr ON medicines(qr_code_id)",
+        "CREATE INDEX IF NOT EXISTS idx_global_qr ON global_medicines(qr_code_id)",
+        "CREATE INDEX IF NOT EXISTS idx_scan_qr ON scan_logs(qr_code_id)",
+        "CREATE INDEX IF NOT EXISTS idx_supply_qr ON supply_chain(qr_code_id)"
+    ]
+    for idx in indexes:
+        try:
+            db_execute(idx, commit=True)
+        except:
+            pass # Index might already exist
 
-    conn.commit()
-    conn.close()
+    # Global Seeds
+    seeds = [
+        ("https://sun.psverify.com/21/G2KTDMHK5", "Rosuvas 10mg", "Sun Pharma", "G2KTDMHK5", "2024-01-01", "2027-12-31", "Global Health Dist", "Government Verified / Sun Pharma portal"),
+        ("QR-EXTERNAL-DRUG-001", "Generic Paracetamol", "HealthCorp Global", "B-9988", "2024-05-10", "2026-05-10", "Express Dist", "WHO Trusted List"),
+        ("https://pfizer.verify/P12345", "Pfizer Vaccine", "Pfizer", "P12345", "2024-01-01", "2026-01-01", "Universal Health", "Pfizer Official Port"),
+        ("https://gsk.verify/G6789", "Augmentin", "GSK", "G6789", "2024-02-15", "2026-02-15", "GSK Supply Chain", "GSK Trust Portal"),
+        ("https://novartis.verify/V9988", "Voltaren", "Novartis", "V9988", "2024-04-10", "2027-04-10", "Novartis Global", "Novartis Secure Portal"),
+        ("QR-ABBOTT-DRUG-555", "Ensure", "Abbott", "AB-555", "2024-03-20", "2025-03-20", "Apollo Pharmacy", "Abbott Direct")
+    ]
+    
+    for s in seeds:
+        if is_postgres:
+            db_execute("INSERT INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (qr_code_id) DO NOTHING", s, commit=True)
+        else:
+            db_execute("INSERT OR IGNORE INTO global_medicines (qr_code_id, name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", s, commit=True)
 
 # Initialize DB on startup
-if not os.path.exists(DB_FILE):
-    init_db()
-else:
-    init_db() # ensure tables are created
+init_db()
 
 # === ROUTES for Templates ===
 
@@ -182,9 +225,8 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        conn = get_db_connection()
-        user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-        conn.close()
+        
+        user = db_execute("SELECT * FROM users WHERE username = ?", (username,), fetch="one")
         
         if user and check_password_hash(user['password'], password):
             session['admin'] = True
@@ -201,41 +243,60 @@ def logout():
 def dashboard():
     if not session.get('admin'):
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    total_meds = conn.execute('SELECT COUNT(*) FROM medicines').fetchone()[0]
-    total_scans = conn.execute('SELECT COUNT(*) FROM scan_logs').fetchone()[0]
-    fake_alerts = conn.execute('SELECT COUNT(*) FROM fake_alerts').fetchone()[0]
-    total_complaints = conn.execute('SELECT COUNT(*) FROM complaints').fetchone()[0]
-    # Count unique unknown scans for pending registration
-    unknown_scans = conn.execute("SELECT COUNT(DISTINCT qr_code_id) FROM scan_logs WHERE result = 'Unknown'").fetchone()[0]
+        
+    total_meds = db_execute('SELECT COUNT(*) FROM medicines', fetch="one")[0]
+    total_scans = db_execute('SELECT COUNT(*) FROM scan_logs', fetch="one")[0]
+    fake_alerts = db_execute('SELECT COUNT(*) FROM fake_alerts', fetch="one")[0]
+    total_complaints = db_execute('SELECT COUNT(*) FROM complaints', fetch="one")[0]
     
-    recent_scans = conn.execute('SELECT * FROM scan_logs ORDER BY id DESC LIMIT 5').fetchall()
+    # Count unique unknown scans for pending registration
+    unknown_scans = db_execute("SELECT COUNT(DISTINCT qr_code_id) FROM scan_logs WHERE result = 'Unknown'", fetch="one")[0]
+    
+    recent_scans = db_execute('SELECT * FROM scan_logs ORDER BY id DESC LIMIT 5', fetch="all")
     
     # Timeline Data (Last 7 days of scans)
     timeline_query = """
-        SELECT date(timestamp) as scan_date, COUNT(*) as count 
+        SELECT DATE(timestamp) as scan_date, COUNT(*) as count 
         FROM scan_logs 
         GROUP BY scan_date
         ORDER BY scan_date DESC
         LIMIT 7
     """
-    timeline = conn.execute(timeline_query).fetchall()
-    timeline_labels = [t['scan_date'] for t in reversed(timeline)]
+    timeline = db_execute(timeline_query, fetch="all")
+    timeline_labels = [str(t['scan_date']) for t in reversed(timeline)]
     timeline_counts = [t['count'] for t in reversed(timeline)]
     
     # Expiring Soon (Next 30 days)
-    expiring_soon = conn.execute("""
+    # Using a syntax that works for both SQLite and Postgres
+    expiring_soon_query = """
         SELECT * FROM medicines 
-        WHERE date(exp_date) >= date('now') 
-        AND date(exp_date) <= date('now', '+30 days')
+        WHERE (CASE 
+                WHEN exp_date IS NOT NULL AND exp_date != 'N/A' 
+                THEN DATE(exp_date) 
+                ELSE NULL 
+               END) >= CURRENT_DATE 
+        AND (CASE 
+                WHEN exp_date IS NOT NULL AND exp_date != 'N/A' 
+                THEN DATE(exp_date) 
+                ELSE NULL 
+               END) <= CURRENT_DATE + INTERVAL '30 days'
         ORDER BY exp_date ASC
-    """).fetchall()
+    """
+    # SQLite fallback if not on postgres
+    if not DATABASE_URL:
+        expiring_soon_query = """
+            SELECT * FROM medicines 
+            WHERE date(exp_date) >= date('now') 
+            AND date(exp_date) <= date('now', '+30 days')
+            ORDER BY exp_date ASC
+        """
+        
+    expiring_soon = db_execute(expiring_soon_query, fetch="all")
     
     # Distribution Data
-    results = conn.execute("SELECT result, COUNT(*) as count FROM scan_logs GROUP BY result").fetchall()
+    results = db_execute("SELECT result, COUNT(*) as count FROM scan_logs GROUP BY result", fetch="all")
     distribution = {r['result']: r['count'] for r in results}
 
-    conn.close()
     return render_template('dashboard.html', stats={
         "total_meds": total_meds,
         "total_scans": total_scans,
@@ -252,13 +313,11 @@ def api_stats():
     if not session.get('admin'):
         return jsonify({"error": "Unauthorized"}), 403
         
-    conn = get_db_connection()
-    total_meds = conn.execute('SELECT COUNT(*) FROM medicines').fetchone()[0]
-    total_scans = conn.execute('SELECT COUNT(*) FROM scan_logs').fetchone()[0]
-    fake_alerts = conn.execute('SELECT COUNT(*) FROM fake_alerts').fetchone()[0]
-    total_complaints = conn.execute('SELECT COUNT(*) FROM complaints').fetchone()[0]
-    unknown_scans = conn.execute("SELECT COUNT(DISTINCT qr_code_id) FROM scan_logs WHERE result = 'Unknown'").fetchone()[0]
-    conn.close()
+    total_meds = db_execute('SELECT COUNT(*) FROM medicines', fetch="one")[0]
+    total_scans = db_execute('SELECT COUNT(*) FROM scan_logs', fetch="one")[0]
+    fake_alerts = db_execute('SELECT COUNT(*) FROM fake_alerts', fetch="one")[0]
+    total_complaints = db_execute('SELECT COUNT(*) FROM complaints', fetch="one")[0]
+    unknown_scans = db_execute("SELECT COUNT(DISTINCT qr_code_id) FROM scan_logs WHERE result = 'Unknown'", fetch="one")[0]
     
     return jsonify({
         "total_meds": total_meds,
@@ -292,17 +351,14 @@ def generate_qr():
         stage_info = f"Manufactured. Sent to Distributor: {distributor}"
         root_hash = generate_hash(f"ROOT-{qr_code_id}-{timestamp}")
         
-        conn = get_db_connection()
-        conn.execute('''INSERT INTO medicines 
+        db_execute('''INSERT INTO medicines 
                         (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id))
+                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
         
         # Initial supply chain record (Genesis Block)
-        conn.execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
-                        VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash))
-        conn.commit()
-        conn.close()
+        db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
+                        VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
         
         # Determine the base URL for the QR code
         base_url = get_base_url()
@@ -331,17 +387,14 @@ def register_medicine():
         stage_info = f"Manufactured. Sent to Distributor: {distributor}"
         root_hash = generate_hash(f"ROOT-{qr_code_id}-{timestamp}")
         
-        conn = get_db_connection()
-        conn.execute('''INSERT INTO medicines 
+        db_execute('''INSERT INTO medicines 
                         (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id))
+                     (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
         
         # Initial supply chain record (Genesis Block)
-        conn.execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
-                        VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash))
-        conn.commit()
-        conn.close()
+        db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
+                        VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
         
         base_url = get_base_url()
         
@@ -353,13 +406,10 @@ def delete_medicine(qr_id):
     if not session.get('admin'):
         return redirect(url_for('login'))
     
-    conn = get_db_connection()
-    conn.execute('DELETE FROM medicines WHERE qr_code_id = ?', (qr_id,))
-    conn.execute('DELETE FROM scan_logs WHERE qr_code_id = ?', (qr_id,))
-    conn.execute('DELETE FROM supply_chain WHERE qr_code_id = ?', (qr_id,))
-    conn.execute('DELETE FROM fake_alerts WHERE qr_code_id = ?', (qr_id,))
-    conn.commit()
-    conn.close()
+    db_execute('DELETE FROM medicines WHERE qr_code_id = ?', (qr_id,), commit=True)
+    db_execute('DELETE FROM scan_logs WHERE qr_code_id = ?', (qr_id,), commit=True)
+    db_execute('DELETE FROM supply_chain WHERE qr_code_id = ?', (qr_id,), commit=True)
+    db_execute('DELETE FROM fake_alerts WHERE qr_code_id = ?', (qr_id,), commit=True)
     
     # Stay on the current page if possible
     referrer = request.referrer
@@ -372,10 +422,7 @@ def delete_scan(scan_id):
     if not session.get('admin'):
         return redirect(url_for('login'))
     
-    conn = get_db_connection()
-    conn.execute('DELETE FROM scan_logs WHERE id = ?', (scan_id,))
-    conn.commit()
-    conn.close()
+    db_execute('DELETE FROM scan_logs WHERE id = ?', (scan_id,), commit=True)
     
     # Stay on the same page
     referrer = request.referrer
@@ -388,18 +435,14 @@ def manage_medicines():
     if not session.get('admin'):
         return redirect(url_for('login'))
     
-    conn = get_db_connection()
-    medicines = conn.execute('SELECT * FROM medicines ORDER BY id DESC').fetchall()
-    conn.close()
+    medicines = db_execute('SELECT * FROM medicines ORDER BY id DESC', fetch="all")
     return render_template('manage_medicines.html', medicines=medicines)
 
 @app.route('/history')
 def history():
     if not session.get('admin'):
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    logs = conn.execute('SELECT s.*, m.name as medicine_name FROM scan_logs s LEFT JOIN medicines m ON s.qr_code_id = m.qr_code_id ORDER BY s.id DESC').fetchall()
-    conn.close()
+    logs = db_execute('SELECT s.*, m.name as medicine_name FROM scan_logs s LEFT JOIN medicines m ON s.qr_code_id = m.qr_code_id ORDER BY s.id DESC', fetch="all")
     return render_template('history.html', logs=logs)
 
 @app.route('/export_history')
@@ -407,9 +450,7 @@ def export_history():
     if not session.get('admin'):
         return redirect(url_for('login'))
     
-    conn = get_db_connection()
-    logs = conn.execute('SELECT s.*, m.name as medicine_name FROM scan_logs s LEFT JOIN medicines m ON s.qr_code_id = m.qr_code_id ORDER BY s.id DESC').fetchall()
-    conn.close()
+    logs = db_execute('SELECT s.*, m.name as medicine_name FROM scan_logs s LEFT JOIN medicines m ON s.qr_code_id = m.qr_code_id ORDER BY s.id DESC', fetch="all")
     
     output = io.StringIO()
     writer = csv.writer(output)
@@ -435,9 +476,7 @@ def fake_map():
 def admin_complaints():
     if not session.get('admin'):
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    reports = conn.execute('SELECT * FROM complaints ORDER BY id DESC').fetchall()
-    conn.close()
+    reports = db_execute('SELECT * FROM complaints ORDER BY id DESC', fetch="all")
     return render_template('admin_complaints.html', reports=reports)
 
 @app.route('/complaints', methods=['GET', 'POST'])
@@ -451,11 +490,8 @@ def complaints():
         description = request.form['description']
         location = request.form['location']
         
-        conn = get_db_connection()
-        conn.execute('INSERT INTO complaints (medicine_name, batch_number, description, location, timestamp) VALUES (?, ?, ?, ?, ?)',
-                     (medicine_name, batch, description, location, str(datetime.now())))
-        conn.commit()
-        conn.close()
+        db_execute('INSERT INTO complaints (medicine_name, batch_number, description, location, timestamp) VALUES (?, ?, ?, ?, ?)',
+                     (medicine_name, batch, description, location, str(datetime.now())), commit=True)
         return render_template('complaints.html', success=True)
         
     return render_template('complaints.html', med_name=prefill_name, batch=prefill_batch)
@@ -468,12 +504,9 @@ def verify_medicine(medicine_id):
     scanner_type = request.args.get('scannerType', 'Consumer')
     is_damaged = request.args.get('isDamaged') == 'true'
     
-    conn = get_db_connection()
-    
     # CHECK BLACKLIST FIRST
-    blacklisted = conn.execute("SELECT * FROM blacklisted_qrs WHERE qr_code_id = ?", (medicine_id,)).fetchone()
+    blacklisted = db_execute("SELECT * FROM blacklisted_qrs WHERE qr_code_id = ?", (medicine_id,), fetch="one")
     if blacklisted:
-        conn.close()
         # CLEAN FAKE ALERT (No admin mention)
         status_msg = "Fake"
         fake_reason = "This QR code has been verified as a COUNTERFEIT. DO NOT CONSUME. Please report this to the authorities immediately."
@@ -489,7 +522,7 @@ def verify_medicine(medicine_id):
         else:
             return render_template('verify.html', status=status_msg, reason=fake_reason, medicine=med_details, supply_chain=[])
 
-    medicine = conn.execute("SELECT * FROM medicines WHERE qr_code_id = ?", (medicine_id,)).fetchone()
+    medicine = db_execute("SELECT * FROM medicines WHERE qr_code_id = ?", (medicine_id,), fetch="one")
     
     result = "Unknown"
     timestamp = str(datetime.now())
@@ -498,7 +531,7 @@ def verify_medicine(medicine_id):
     med_details = None
     if not medicine:
         # Check simulated Global Database (Exact Match)
-        global_med = conn.execute("SELECT name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source FROM global_medicines WHERE qr_code_id = ?", (medicine_id,)).fetchone()
+        global_med = db_execute("SELECT name, manufacturer, batch_number, mfg_date, exp_date, distributor, trust_source FROM global_medicines WHERE qr_code_id = ?", (medicine_id,), fetch="one")
         
         # If no exact match, check Trusted Domains List (Wildcard Match)
         if not global_med:
@@ -606,13 +639,13 @@ def verify_medicine(medicine_id):
             fake_reason = "Expired medicine scanned"
             status_msg = "Expired Medicine Warning"
         else:
-            scans_count = conn.execute("""
+            scans_count = db_execute("""
                 SELECT COUNT(DISTINCT location) FROM scan_logs 
                 WHERE qr_code_id = ? AND location != 'Unknown' AND location != ?
-            """, (medicine_id, location_coords)).fetchone()[0]
+            """, (medicine_id, location_coords), fetch="one")[0]
             
             if scans_count >= 1:
-                rows = conn.execute("SELECT DISTINCT location FROM scan_logs WHERE qr_code_id = ? AND location != 'Unknown' AND location != ?", (medicine_id, location_coords)).fetchall()
+                rows = db_execute("SELECT DISTINCT location FROM scan_logs WHERE qr_code_id = ? AND location != 'Unknown' AND location != ?", (medicine_id, location_coords), fetch="all")
                 locs = [r['location'] for r in rows]
                 result = "Suspicious"
                 is_fake = True
@@ -632,32 +665,29 @@ def verify_medicine(medicine_id):
 
     # If consumer scan and verified, add to supply chain
     if result == "Verified" and scanner_type == "Consumer":
-        chk = conn.execute("SELECT id, current_hash FROM supply_chain WHERE qr_code_id = ? ORDER BY id DESC LIMIT 1", (medicine_id,)).fetchone()
-        already_scanned = conn.execute("SELECT id FROM supply_chain WHERE qr_code_id = ? AND stage = 'Scanned by Consumer'", (medicine_id,)).fetchone()
+        chk = db_execute("SELECT id, current_hash FROM supply_chain WHERE qr_code_id = ? ORDER BY id DESC LIMIT 1", (medicine_id,), fetch="one")
+        already_scanned = db_execute("SELECT id FROM supply_chain WHERE qr_code_id = ? AND stage = 'Scanned by Consumer'", (medicine_id,), fetch="one")
         
         if not already_scanned:
             prev_hash = chk['current_hash'] if chk else "0"
             new_hash = generate_hash(f"{prev_hash}-{medicine_id}-Consumer-{timestamp}")
-            conn.execute('''INSERT INTO supply_chain (qr_code_id, stage, location, timestamp, previous_hash, current_hash) 
-                            VALUES (?, ?, ?, ?, ?, ?)''', (medicine_id, 'Scanned by Consumer', location_coords, timestamp, prev_hash, new_hash))
+            db_execute('''INSERT INTO supply_chain (qr_code_id, stage, location, timestamp, previous_hash, current_hash) 
+                            VALUES (?, ?, ?, ?, ?, ?)''', (medicine_id, 'Scanned by Consumer', location_coords, timestamp, prev_hash, new_hash), commit=True)
             
     # Get supply chain history
     supply_history = []
     if medicine:
-        rows = conn.execute("SELECT * FROM supply_chain WHERE qr_code_id = ? ORDER BY id ASC", (medicine_id,)).fetchall()
+        rows = db_execute("SELECT * FROM supply_chain WHERE qr_code_id = ? ORDER BY id ASC", (medicine_id,), fetch="all")
         supply_history = [{"stage": r['stage'], "location": r['location'], "timestamp": r['timestamp'], "hash": r['current_hash']} for r in rows]
 
     # Insert fake alert if applicable
     if is_fake:
-        conn.execute('''INSERT INTO fake_alerts (qr_code_id, location, reason, timestamp) 
-                        VALUES (?, ?, ?, ?)''', (medicine_id, location_coords, fake_reason, timestamp))
+        db_execute('''INSERT INTO fake_alerts (qr_code_id, location, reason, timestamp) 
+                        VALUES (?, ?, ?, ?)''', (medicine_id, location_coords, fake_reason, timestamp), commit=True)
     
     # Record scan log
-    conn.execute('''INSERT INTO scan_logs (qr_code_id, result, location, scanner_type, timestamp) 
-                    VALUES (?, ?, ?, ?, ?)''', (medicine_id, result, location_coords, scanner_type, timestamp))
-    
-    conn.commit()
-    conn.close()
+    db_execute('''INSERT INTO scan_logs (qr_code_id, result, location, scanner_type, timestamp) 
+                    VALUES (?, ?, ?, ?, ?)''', (medicine_id, result, location_coords, scanner_type, timestamp), commit=True)
     
     if request.args.get('format') == 'json':
         return jsonify({
@@ -680,9 +710,7 @@ def verify_medicine(medicine_id):
 
 @app.route('/api/fake_alerts', methods=['GET'])
 def api_fake_alerts():
-    conn = get_db_connection()
-    alerts = conn.execute("SELECT * FROM fake_alerts").fetchall()
-    conn.close()
+    alerts = db_execute("SELECT * FROM fake_alerts", fetch="all")
     
     results = []
     for a in alerts:
@@ -698,25 +726,21 @@ def api_fake_alerts():
 def admin_unknown_scans():
     if not session.get('admin'):
         return redirect(url_for('login'))
-    conn = get_db_connection()
     # Find unique unknown QR IDs from logs
-    unknowns = conn.execute("""
+    unknowns = db_execute("""
         SELECT qr_code_id, MAX(timestamp) as last_seen, COUNT(*) as scan_count, MAX(location) as last_location
         FROM scan_logs 
         WHERE result IN ('Unknown', 'Suspicious') 
         GROUP BY qr_code_id 
         ORDER BY last_seen DESC
-    """).fetchall()
-    conn.close()
+    """, fetch="all")
     return render_template('admin_unknown_scans.html', unknowns=unknowns)
 
 @app.route('/admin/blacklist')
 def admin_blacklist():
     if not session.get('admin'):
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    blacklisted = conn.execute("SELECT * FROM blacklisted_qrs ORDER BY timestamp DESC").fetchall()
-    conn.close()
+    blacklisted = db_execute("SELECT * FROM blacklisted_qrs ORDER BY timestamp DESC", fetch="all")
     return render_template('admin_blacklist.html', blacklisted=blacklisted)
 
 @app.route('/api/blacklist_qr', methods=['POST'])
@@ -731,23 +755,22 @@ def blacklist_qr():
     if not qr_id:
         return jsonify({"success": False, "message": "Missing QR ID"}), 400
         
-    conn = get_db_connection()
     try:
-        conn.execute("INSERT OR REPLACE INTO blacklisted_qrs (qr_code_id, reason, timestamp) VALUES (?, ?, ?)",
-                     (qr_id, reason, str(datetime.now())))
+        # Using a direct is_postgres check for the complex ON CONFLICT logic
+        if DATABASE_URL:
+            db_execute("INSERT INTO blacklisted_qrs (qr_code_id, reason, timestamp) VALUES (%s, %s, %s) ON CONFLICT (qr_code_id) DO UPDATE SET reason = EXCLUDED.reason, timestamp = EXCLUDED.timestamp", (qr_id, reason, str(datetime.now())), commit=True)
+        else:
+            db_execute("INSERT OR REPLACE INTO blacklisted_qrs (qr_code_id, reason, timestamp) VALUES (?, ?, ?)", (qr_id, reason, str(datetime.now())), commit=True)
         
         # [NEW] Auto-cleanup: Update all existing 'Unknown' logs for this QR to 'Fake'
-        conn.execute("UPDATE scan_logs SET result = 'Fake' WHERE qr_code_id = ? AND result = 'Unknown'", (qr_id,))
+        db_execute("UPDATE scan_logs SET result = 'Fake' WHERE qr_code_id = ? AND result = 'Unknown'", (qr_id,), commit=True)
         
         # Log as fake alert
-        conn.execute("INSERT OR IGNORE INTO fake_alerts (qr_code_id, location, reason, timestamp) VALUES (?, ?, ?, ?)",
-                     (qr_id, "Admin Panel", f"Blacklisted: {reason}", str(datetime.now())))
-        conn.commit()
+        db_execute("INSERT OR IGNORE INTO fake_alerts (qr_code_id, location, reason, timestamp) VALUES (?, ?, ?, ?)", (qr_id, "Admin Panel", f"Blacklisted: {reason}", str(datetime.now())), commit=True)
+        
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
 
 @app.route('/api/unblacklist_qr', methods=['POST'])
 def unblacklist_qr():
@@ -760,16 +783,11 @@ def unblacklist_qr():
     if not qr_id:
         return jsonify({"success": False, "message": "Missing QR ID"}), 400
         
-    conn = get_db_connection()
     try:
-        conn.execute("DELETE FROM blacklisted_qrs WHERE qr_code_id = ?", (qr_id,))
-        # Also clean up related fake alerts if needed, but usually we just want to allow future scans
-        conn.commit()
+        db_execute("DELETE FROM blacklisted_qrs WHERE qr_code_id = ?", (qr_id,), commit=True)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
 
 @app.route('/api/delete_unknown_scan', methods=['POST'])
 def delete_unknown_scan():
@@ -782,16 +800,12 @@ def delete_unknown_scan():
     if not qr_id:
         return jsonify({"success": False, "message": "Missing QR ID"}), 400
         
-    conn = get_db_connection()
     try:
         # Delete 'Unknown' and 'Suspicious' scans for this QR ID. Genuine/Fake logs remain.
-        conn.execute("DELETE FROM scan_logs WHERE qr_code_id = ? AND result IN ('Unknown', 'Suspicious')", (qr_id,))
-        conn.commit()
+        db_execute("DELETE FROM scan_logs WHERE qr_code_id = ? AND result IN ('Unknown', 'Suspicious')", (qr_id,), commit=True)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
 
 @app.route('/api/onboard_external', methods=['POST'])
 def onboard_external():
