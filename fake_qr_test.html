@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fake QR Tester</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; }
+        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; }
+        h2 { color: #d9534f; }
+        #qrcode { margin: 20px; }
+        code { background: #eee; padding: 5px; border-radius: 4px; display: block; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>FAKE MEDICINE QR TEST</h2>
+        <p>Scan this to test Aushadhi Vishwas detection</p>
+        <div id="qrcode"></div>
+        <p><strong>Content:</strong></p>
+        <code>https://sun-pharma-verify.com/G2KTDMHK5</code>
+    </div>
+    <script>
+        new QRCode(document.getElementById("qrcode"), {
+            text: "https://sun-pharma-verify.com/G2KTDMHK5",
+            width: 256,
+            height: 256,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    </script>
+</body>
+</html>

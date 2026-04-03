@@ -1,0 +1,320 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link active" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('generate_qr') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('manage_medicines') }}"><i class="fa-solid fa-boxes-stacked"></i> Manage Medicines</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('history') }}"><i class="fa-solid fa-list"></i> Scan History</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('fake_map') }}"><i class="fa-solid fa-map-location-dot"></i> Fake Alert Map</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a>
+                </li>
+
+                <li class="nav-item mt-5">
+                    <a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="text-primary">System Overview Analytics</h3>
+                <div class="small text-muted align-self-end mb-1">
+                    <span class="live-dot"></span> System Live | Auto-refreshing in <span id="refresh-timer">30</span>s
+                </div>
+            </div>
+            
+            <div class="row mb-5">
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-capsules fa-3x text-primary mb-3"></i>
+                        <h4>Medicines</h4>
+                        <h2 class="fw-bold stat-num" id="stat-meds">{{ stats.total_meds }}</h2>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-barcode fa-3x text-success mb-3"></i>
+                        <h4>Scans</h4>
+                        <h2 class="fw-bold stat-num" id="stat-scans">{{ stats.total_scans }}</h2>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-circle-exclamation fa-3x text-danger mb-3"></i>
+                        <h4>Complaints</h4>
+                        <h2 class="fw-bold text-danger stat-num" id="stat-complaints">{{ stats.total_complaints }}</h2>
+                    </div>
+                </div>
+                <!-- Pending Registration Card -->
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center border-primary" style="border-width: 2px;">
+                        <i class="fa-solid fa-clock-rotate-left fa-3x text-primary mb-3"></i>
+                        <h4>Pending</h4>
+                        <h2 class="fw-bold text-primary stat-num" id="stat-pending">{{ stats.unknown_scans }}</h2>
+                        <a href="{{ url_for('admin_unknown_scans') }}" class="btn btn-sm btn-outline-primary mt-2">Verify & Onboard</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-7 mb-4">
+                    <div class="glass-card p-4 h-100">
+                        <h5 class="mb-3 text-secondary"><i class="fa-solid fa-history"></i> Recent Scans Activity</h5>
+                        <div class="table-responsive">
+                            <table class="table table-hover table-bordered align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>QR ID</th>
+                                        <th>Location</th>
+                                        <th>Result</th>
+                                        <th>Date & Time</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for r in recent %}
+                                    <tr>
+                                        <td style="max-width: 150px; word-break: break-all;"><small><code>{{ r.qr_code_id }}</code></small></td>
+                                        <td>{{ r.location }}</td>
+                                        <td>
+                                            {% if r.result == 'Verified' %}
+                                                <span class="badge bg-success">Verified</span>
+                                            {% elif r.result == 'Suspicious' %}
+                                                <span class="badge bg-warning text-dark">Suspicious</span>
+                                            {% elif r.result == 'Expired' %}
+                                                <span class="badge bg-danger">Expired</span>
+                                            {% else %}
+                                                <span class="badge bg-danger">Fake</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ r.timestamp }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-danger" 
+                                                data-url="{{ url_for('delete_scan', scan_id=r.id) }}"
+                                                onclick="deleteItem('Delete this scan entry?', this.getAttribute('data-url'))">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="5" class="text-center text-muted">No recent scans found</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <!-- Analytics Chart -->
+                <div class="col-md-5 mb-4">
+                    <div class="glass-card p-4 h-100">
+                        <h5 class="mb-3 text-secondary"><i class="fa-solid fa-chart-pie"></i> Scan Distribution</h5>
+                        <div class="chart-container" style="position: relative; height:300px; width:100%">
+                            <canvas id="distributionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Trends Chart -->
+                <div class="col-md-12 mb-4">
+                    <div class="glass-card p-4">
+                        <h5 class="mb-3 text-secondary"><i class="fa-solid fa-chart-line"></i> Daily Scan Trends (Last 7 Days)</h5>
+                        <div class="chart-container" style="position: relative; height:250px; width:100%">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Expiring Soon -->
+                <div class="col-md-12 mb-4">
+                    <div class="glass-card p-4">
+                        <h5 class="mb-3 text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Medicines Expiring Soon (30 Days)</h5>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-warning">
+                                    <tr>
+                                        <th>Medicine Name</th>
+                                        <th>Batch</th>
+                                        <th>Expiry Date</th>
+                                        <th>Manufacturer</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for m in expiring_soon %}
+                                    <tr class="table-danger">
+                                        <td>{{ m.name }}</td>
+                                        <td>{{ m.batch_number }}</td>
+                                        <td class="fw-bold">{{ m.exp_date }}</td>
+                                        <td>{{ m.manufacturer }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="4" class="text-center text-muted">No medicines expiring soon.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Data for Charts (Passed safely to JS) -->
+<script id="dashboard-data" type="application/json">
+{
+    "distribution": {{ distribution | tojson }},
+    "timeline_labels": {{ timeline_labels | tojson }},
+    "timeline_counts": {{ timeline_counts | tojson }}
+}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Parse data from the JSON script tag
+        const dataElement = document.getElementById('dashboard-data');
+        const dbData = JSON.parse(dataElement.textContent);
+        
+        const distributionData = dbData.distribution;
+        const timelineLabels = dbData.timeline_labels;
+        const timelineCounts = dbData.timeline_counts;
+
+        // ─── Number Counter Animation ────────────────────────────
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = Math.floor(progress * (end - start) + start);
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        document.querySelectorAll('.stat-num').forEach(el => {
+            const val = parseInt(el.textContent);
+            animateValue(el, 0, val, 1000);
+        });
+
+        // ─── Distribution Chart ─────────────────────────────────
+        const distCtx = document.getElementById('distributionChart').getContext('2d');
+        new Chart(distCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Verified', 'Suspicious', 'Fake', 'Expired'],
+                datasets: [{
+                    data: [
+                        distributionData['Verified'] || 0,
+                        distributionData['Suspicious'] || 0,
+                        distributionData['Fake'] || distributionData['Possible Fake Medicine'] || 0,
+                        distributionData['Expired'] || 0
+                    ],
+                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+                    hoverOffset: 15
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+
+        // ─── Trend Chart ───────────────────────────────────────
+        const trendCtx = document.getElementById('trendChart').getContext('2d');
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: timelineLabels,
+                datasets: [{
+                    label: 'Number of Scans',
+                    data: timelineCounts,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { 
+                        beginAtZero: true, 
+                        ticks: { stepSize: 1 } 
+                    }
+                }
+            }
+        });
+
+        // ─── Auto-Refresh Stats ───────────────────────────────
+        let timeLeft = 30;
+        const timerEl = document.getElementById('refresh-timer');
+        
+        setInterval(() => {
+            timeLeft--;
+            if (timerEl) timerEl.textContent = timeLeft;
+            
+            if (timeLeft <= 0) {
+                timeLeft = 30;
+                fetch('/api/stats')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.error) return;
+                        updateStat('stat-meds', data.total_meds);
+                        updateStat('stat-scans', data.total_scans);
+                        updateStat('stat-complaints', data.total_complaints);
+                        updateStat('stat-pending', data.unknown_scans);
+                        showToast('Stats updated silently', 'info', 2000);
+                    });
+            }
+        }, 1000);
+
+        function updateStat(id, newVal) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const oldVal = parseInt(el.textContent);
+            if (oldVal !== newVal) {
+                animateValue(el, oldVal, newVal, 800);
+                el.parentElement.style.transform = 'scale(1.05)';
+                setTimeout(() => el.parentElement.style.transform = '', 400);
+            }
+        }
+    });
+</script>
+
+{% endblock %}

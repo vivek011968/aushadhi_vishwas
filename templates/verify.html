@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <!-- Result Header -->
+            <div class="text-center mb-4">
+                {% if 'Verified' in status %}
+                    <div class="display-1 text-success mb-3 animate__animated animate__bounceIn">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <h2 class="text-success fw-bold">{{ status }}</h2>
+                    {% if medicine and medicine.is_external %}
+                        <div class="mb-3">
+                            <span class="badge bg-success p-2"><i class="fa-solid fa-shield-halved"></i> Global Trusted</span>
+                            <p class="text-muted mt-2">Verified via: <strong>{{ medicine.trust_source }}</strong></p>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">This medicine has been cleared by Aushadhi Vishwas.</p>
+                    {% endif %}
+                {% elif status == 'Unknown External QR Code' or 'Suspicious' in status %}
+                    <div class="display-1 text-warning mb-3 animate__animated animate__pulse animate__infinite">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <h2 class="text-warning fw-bold">{{ status }}</h2>
+                    <p class="text-muted">{{ reason }}</p>
+                {% elif status == 'Possible Fake Medicine' or status == 'Fake' %}
+                    <div class="display-1 text-danger mb-3 animate__animated animate__headShake">
+                        <i class="fa-solid fa-skull-crossbones"></i>
+                    </div>
+                    <h2 class="text-danger fw-bold">Possible Fake Medicine</h2>
+                    <p class="text-danger">{{ reason }}</p>
+                {% else %}
+                    <div class="display-1 text-info mb-3 animate__animated animate__pulse animate__infinite">
+                        <i class="fa-solid fa-circle-info"></i>
+                    </div>
+                    <h2 class="text-info fw-bold">{{ status }}</h2>
+                    <p class="text-info">{{ reason }}</p>
+                {% endif %}
+            </div>
+
+            <div class="glass-card mt-3 p-3 text-center">
+                <label class="text-muted small d-block mb-2"><i class="fa-solid fa-code"></i> Raw QR Content</label>
+                <code class="text-dark d-block mb-3" style="word-break: break-all;">{{ medicine.raw_data }}</code>
+                {% if medicine and medicine.raw_data and (medicine.raw_data.startswith('http://') or medicine.raw_data.startswith('https://')) %}
+                    <a href="{{ medicine.raw_data }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                        <i class="fa-solid fa-external-link"></i> Visit Link
+                    </a>
+                {% endif %}
+            </div>
+
+            <!-- Medicine Details Card -->
+            {% if medicine and not is_fake %}
+            <div class="glass-card mt-4 p-4 animate__animated animate__fadeInUp">
+                <h5 class="mb-3"><i class="fa-solid fa-pills text-primary"></i> Medicine Details</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tbody>
+                            <tr><th class="ps-0 text-muted" style="width: 40%;">Name</th><td class="fw-bold">{{ medicine.name }}</td></tr>
+                            <tr><th class="ps-0 text-muted">Manufacturer</th><td>{{ medicine.manufacturer }}</td></tr>
+                            <tr><th class="ps-0 text-muted">Batch Number</th><td><code>{{ medicine.batch_number }}</code></td></tr>
+                            <tr><th class="ps-0 text-muted">Mfg Date</th><td>{{ medicine.mfg_date }}</td></tr>
+                            <tr><th class="ps-0 text-muted">Expiry Date</th><td class="text-danger fw-bold">{{ medicine.exp_date }}</td></tr>
+                            <tr><th class="ps-0 text-muted">Distributor</th><td>{{ medicine.distributor }}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Digital Ledger Journey -->
+            <div class="glass-card mt-4 p-4 animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
+                <h5 class="mb-3"><i class="fa-solid fa-route"></i> Digital Ledger Journey</h5>
+                <ul class="supply-timeline ps-3">
+                    {% for log in supply_chain %}
+                    <li>
+                        <strong>{{ log.stage }}</strong> <br>
+                        <small class="text-muted">
+                            <i class="fa-solid fa-location-arrow"></i> {{ log.location or 'Factory' }} &nbsp;|&nbsp; 
+                            <i class="fa-solid fa-clock"></i> {{ log.timestamp }}
+                        </small>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <!-- Actions -->
+            <div class="mt-4 text-center">
+                {% if ('Unknown' in status or 'Suspicious' in status) and session.get('admin') %}
+                    <button onclick="registerAsTrustedPage('{{ medicine.raw_data }}')" class="btn btn-primary w-100 btn-lg mb-3">
+                        <i class="fa-solid fa-plus-circle"></i> Register as Trusted (Admin)
+                    </button>
+                {% endif %}
+
+                {% if 'Verified' not in status %}
+                    <a href="{{ url_for('complaints', med_name=medicine.name, batch=medicine.batch_number) if medicine else url_for('complaints') }}" class="btn btn-danger w-100 btn-lg mb-3">
+                        <i class="fa-solid fa-paper-plane"></i> Report Counterfeit
+                    </a>
+                {% endif %}
+                <a href="{{ url_for('home') }}" class="btn btn-outline-primary w-100">
+                    <i class="fa-solid fa-house"></i> Return Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function registerAsTrustedPage(qrContent) {
+    if(confirm("Register this external product as a trusted medicine?")) {
+        const name = prompt("Enter Medicine Name:", "Unknown Medicine");
+        const manufacturer = prompt("Enter Manufacturer:", "Unknown Manufacturer");
+        
+        if(!name || !manufacturer) return;
+
+        fetch('/api/onboard_external', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                qr_code_id: qrContent,
+                name: name,
+                manufacturer: manufacturer,
+                batch_number: "EXT-" + Math.floor(Math.random()*10000),
+                mfg_date: new Date().toISOString().split('T')[0],
+                exp_date: "2027-12-31",
+                distributor: "External Onboarded"
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.success) {
+                alert("Product registered successfully! Refreshing...");
+                location.reload();
+            } else {
+                alert("Error: " + data.message);
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

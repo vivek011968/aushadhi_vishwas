@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('generate_qr') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_medicines') }}"><i class="fa-solid fa-boxes-stacked"></i> Manage Medicines</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('history') }}"><i class="fa-solid fa-list"></i> Scan History</a></li>
+                <li class="nav-item"><a class="nav-link active" href="{{ url_for('fake_map') }}"><i class="fa-solid fa-map-location-dot"></i> Fake Alert Map</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a></li>
+
+                <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <h3 class="mb-4 text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Suspicious & Fake Scans Map</h3>
+            <p class="text-muted">Interactive map showing locations of counterfeit detection and multi-city scan anomalies.</p>
+            
+            <div class="glass-card p-2 w-100">
+                <div id="fake-map"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

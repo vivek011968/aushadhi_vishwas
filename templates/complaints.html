@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7">
+            <div class="glass-card p-5">
+                <h3 class="text-danger mb-4"><i class="fa-solid fa-triangle-exclamation"></i> Report Counterfeit Medicine</h3>
+                <p class="text-muted mb-4">Help us eliminate fake medicines by reporting suspicious packages or adverse reactions to unverified medicines.</p>
+                
+                {% if success %}
+                <div class="alert alert-success mt-3 text-center">
+                    <h5><i class="fa-solid fa-check-circle"></i> Complaint Registered</h5>
+                    <p>Thank you for reporting. Our tracking team will investigate this.</p>
+                    <a href="{{ url_for('home') }}" class="btn btn-primary mt-2">Return Home</a>
+                </div>
+                {% else %}
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Medicine Name</label>
+                        <input type="text" name="medicine_name" class="form-control" required placeholder="Name of medicine" value="{{ med_name or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Batch Number (If visible)</label>
+                        <input type="text" name="batch" class="form-control" placeholder="E.g. BT-98127" value="{{ batch or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Location</label>
+                        <!-- Auto-fetched using JS if permitted -->
+                        <div class="input-group">
+                            <input type="text" name="location" id="complaint-location" class="form-control" required placeholder="City or Coordinates">
+                            <button type="button" class="btn btn-outline-info" onclick="fetchLocation('complaint-location')"><i class="fa-solid fa-location-crosshairs"></i> Detect Location</button>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Description of Suspicion</label>
+                        <textarea name="description" class="form-control" rows="4" required placeholder="Why do you think it's fake? Describe packaging issues, scanning failure, etc."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-danger w-100"><i class="fa-solid fa-paper-plane"></i> Submit Complaint to Authorities</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

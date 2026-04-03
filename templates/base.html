@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aushadhi Vishwas - Anti Counterfeit Medicine System</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
+    {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top py-3 shadow-sm" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
+                <img src="/static/logo.png" alt="Logo" height="35" class="me-2">
+                <span>Aushadhi Vishwas</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navcol" aria-expanded="false">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navcol">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <li class="nav-item me-2">
+                        <button id="darkModeToggle" title="Toggle Dark Mode">🌙 Dark</button>
+                    </li>
+                    {% if not session.get('admin') %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Home</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('scanner') }}">Verify Medicine</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('register_medicine') }}">Manufacturer Portal</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('complaints') }}">Report Fake</a></li>
+                        <li class="nav-item ms-lg-3"><a class="btn btn-sm btn-outline-light" href="{{ url_for('login') }}">Admin Login</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="min-height: 80vh;">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto py-5 border-top bg-white">
+        <div class="container text-center">
+            <div class="mb-3">
+                <a class="navbar-brand d-inline-flex align-items-center text-primary" href="{{ url_for('home') }}">
+                    <img src="/static/logo.png" alt="Logo" height="30" class="me-2">
+                    <span class="fw-bold">Aushadhi Vishwas</span>
+                </a>
+            </div>
+            <p class="text-muted small mb-0">© 2026 Aushadhi Vishwas | <i class="fa-solid fa-heart text-danger"></i> Dedicated to Healthcare Safety & Authenticity</p>
+        </div>
+    </footer>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- HTML5 QRCode -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+    <!-- Global Utilities -->
+    <script>
+    // ─── Dark Mode ───────────────────────────────────────────
+    (function() {
+        const saved = localStorage.getItem('av-theme');
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+    document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('darkModeToggle');
+        if (!btn) return;
+        function updateBtn() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            btn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+        }
+        updateBtn();
+        btn.addEventListener('click', function() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const next = isDark ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('av-theme', next);
+            updateBtn();
+        });
+    });
+
+    // ─── Toast Notification ──────────────────────────────────
+    const TOAST_ICONS = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    function showToast(message, type = 'info', duration = 4000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `av-toast ${type}`;
+        toast.innerHTML = `<span style="font-size:1.2em">${TOAST_ICONS[type] || 'ℹ️'}</span><span>${message}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('hide');
+            toast.addEventListener('animationend', () => toast.remove());
+        }, duration);
+    }
+    window.showToast = showToast;
+
+    // ─── Confirm Action (replaces browser confirm()) ─────────
+    function confirmAction(message, onConfirm) {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = 'av-toast warning';
+        toast.style.flexDirection = 'column';
+        toast.style.alignItems = 'flex-start';
+        toast.style.gap = '10px';
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:1.2em">⚠️</span>
+                <span>${message}</span>
+            </div>
+            <div style="display:flex;gap:8px;width:100%">
+                <button id="conf-yes" style="flex:1;padding:6px;border:none;border-radius:8px;background:#ef4444;color:white;font-weight:600;cursor:pointer">Yes, Delete</button>
+                <button id="conf-no"  style="flex:1;padding:6px;border:none;border-radius:8px;background:rgba(0,0,0,0.15);color:inherit;font-weight:600;cursor:pointer">Cancel</button>
+            </div>`;
+        container.appendChild(toast);
+        toast.querySelector('#conf-yes').onclick = () => { toast.remove(); onConfirm(); };
+        toast.querySelector('#conf-no').onclick  = () => { toast.classList.add('hide'); toast.addEventListener('animationend', () => toast.remove()); };
+    }
+    window.confirmAction = confirmAction;
+
+    // ─── Delete Item Helper ──────────────────────────────────
+    function deleteItem(message, url) {
+        confirmAction(message, function() {
+            window.location = url;
+        });
+    }
+    window.deleteItem = deleteItem;
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('generate_qr') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a></li>
+                <li class="nav-item"><a class="nav-link active" href="{{ url_for('manage_medicines') }}"><i class="fa-solid fa-boxes-stacked"></i> Manage Medicines</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('history') }}"><i class="fa-solid fa-list"></i> Scan History</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('fake_map') }}"><i class="fa-solid fa-map-location-dot"></i> Fake Alert Map</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a></li>
+
+                <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="text-primary"><i class="fa-solid fa-boxes-stacked"></i> Manage Registered Medicines</h3>
+                <a href="{{ url_for('generate_qr') }}" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Register New</a>
+            </div>
+
+            <!-- Live Search -->
+            <div class="av-search-wrap">
+                <i class="fa-solid fa-search"></i>
+                <input type="text" id="medSearch" class="form-control" placeholder="Search by name, batch, QR ID, distributor...">
+            </div>
+
+            <div class="glass-card p-4">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle" id="medTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Medicine Name</th>
+                                <th>Batch No.</th>
+                                <th>QR Code ID</th>
+                                <th>Mfg Date</th>
+                                <th>Expiry Date</th>
+                                <th>Distributor</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in medicines %}
+                            <tr>
+                                <td>{{ m.id }}</td>
+                                <td class="fw-bold">{{ m.name }}</td>
+                                <td><span class="badge bg-info text-dark">{{ m.batch_number }}</span></td>
+                                <td><code>{{ m.qr_code_id }}</code></td>
+                                <td>{{ m.mfg_date }}</td>
+                                <td>{{ m.exp_date }}</td>
+                                <td>{{ m.distributor }}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <a href="/verify/{{ m.qr_code_id }}" target="_blank" class="btn btn-sm btn-outline-primary" title="Preview QR">
+                                            <i class="fa-solid fa-eye"></i>
+                                        </a>
+                                        <button class="btn btn-sm btn-outline-danger" title="Delete"
+                                            data-name="{{ m.name }}"
+                                            data-url="{{ url_for('delete_medicine', qr_id=m.qr_code_id) }}"
+                                            onclick="deleteItem('Delete ' + this.getAttribute('data-name') + ' and all its logs?', this.getAttribute('data-url'))">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="8" class="text-center text-muted">No medicines registered yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('medSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('#medTable tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}
+

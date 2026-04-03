@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('generate_qr') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_medicines') }}"><i class="fa-solid fa-boxes-stacked"></i> Manage Medicines</a></li>
+                <li class="nav-item"><a class="nav-link active" href="{{ url_for('history') }}"><i class="fa-solid fa-list"></i> Scan History</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('fake_map') }}"><i class="fa-solid fa-map-location-dot"></i> Fake Alert Map</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a></li>
+
+                <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="text-primary"><i class="fa-solid fa-list"></i> Scan History Log</h3>
+                <a href="{{ url_for('export_history') }}" class="btn btn-success"><i class="fa-solid fa-file-csv"></i> Export to CSV</a>
+            </div>
+
+            <!-- Search & Filter Row -->
+            <div class="row mb-3 g-2">
+                <div class="col-md-8">
+                    <div class="av-search-wrap mb-0">
+                        <i class="fa-solid fa-search"></i>
+                        <input type="text" id="histSearch" class="form-control" placeholder="Search by medicine, QR ID, location...">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <select id="histFilter" class="form-select" style="border-radius:12px;">
+                        <option value="">All Results</option>
+                        <option value="Verified">✅ Verified</option>
+                        <option value="Suspicious">⚠️ Suspicious</option>
+                        <option value="Fake">❌ Fake</option>
+                        <option value="Expired">🔴 Expired</option>
+                        <option value="Unknown">❓ Unknown</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="glass-card p-4">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle" id="histTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Scan ID</th>
+                                <th>Medicine Name</th>
+                                <th>QR Code ID</th>
+                                <th>Location</th>
+                                <th>Scanner Type</th>
+                                <th>Result</th>
+                                <th>Date & Time</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in logs %}
+                            <tr data-result="{{ r.result }}">
+                                <td>{{ r.id }}</td>
+                                <td class="fw-bold">{{ r.medicine_name if r.medicine_name else 'Unknown/Fake' }}</td>
+                                <td>{{ r.qr_code_id }}</td>
+                                <td><i class="fa-solid fa-map-marker-alt text-danger"></i> {{ r.location }}</td>
+                                <td><span class="badge bg-secondary">{{ r.scanner_type }}</span></td>
+                                <td>
+                                    {% if r.result == 'Verified' %}
+                                        <span class="badge bg-success">Verified</span>
+                                    {% elif r.result == 'Suspicious' %}
+                                        <span class="badge bg-warning text-dark">Suspicious</span>
+                                    {% elif r.result == 'Expired' %}
+                                        <span class="badge bg-danger">Expired</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Fake</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ r.timestamp }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger"
+                                        data-url="{{ url_for('delete_scan', scan_id=r.id) }}"
+                                        onclick="deleteItem('Delete this scan log entry?', this.getAttribute('data-url'))">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="8" class="text-center text-muted">No scan history available</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterHistory() {
+    const q = document.getElementById('histSearch').value.toLowerCase();
+    const f = document.getElementById('histFilter').value;
+    document.querySelectorAll('#histTable tbody tr').forEach(row => {
+        const textMatch = row.textContent.toLowerCase().includes(q);
+        const resultMatch = !f || (row.dataset.result || '').includes(f);
+        row.style.display = (textMatch && resultMatch) ? '' : 'none';
+    });
+}
+document.getElementById('histSearch').addEventListener('input', filterHistory);
+document.getElementById('histFilter').addEventListener('change', filterHistory);
+</script>
+{% endblock %}
+

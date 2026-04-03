@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('generate_qr') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_medicines') }}"><i class="fa-solid fa-boxes-stacked"></i> Manage Medicines</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('history') }}"><i class="fa-solid fa-list"></i> Scan History</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('fake_map') }}"><i class="fa-solid fa-map-location-dot"></i> Fake Alert Map</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a></li>
+                <li class="nav-item"><a class="nav-link active" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a></li>
+                <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <h3 class="mb-4 text-danger"><i class="fa-solid fa-ban"></i> Blacklisted Products</h3>
+            <p class="text-muted">These products are currently flagged as Fake. If you accidentally marked one as fake, you can remove it from here.</p>
+
+            <div class="glass-card p-4">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>QR ID / Link</th>
+                                <th>Reason for Blacklisting</th>
+                                <th>Timestamp</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for b in blacklisted %}
+                            <tr>
+                                <td style="max-width: 300px; word-break: break-all;">
+                                    <code>{{ b.qr_code_id }}</code>
+                                </td>
+                                <td>{{ b.reason }}</td>
+                                <td>{{ b.timestamp }}</td>
+                                <td>
+                                    <button class="btn btn-outline-success btn-sm" onclick="unblacklist('{{ b.qr_code_id }}')">
+                                        <i class="fa-solid fa-rotate-left"></i> Restore as Regular
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-center text-muted p-5">No blacklisted products found.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function unblacklist(qrId) {
+    if(confirm("Are you sure you want to remove this QR from the blacklist? Future scans will no longer show it as Fake.")) {
+        fetch('/api/unblacklist_qr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qr_code_id: qrId })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.success) {
+                alert("Product restored successfully.");
+                location.reload();
+            } else {
+                alert("Error: " + data.message);
+            }
+        });
+    }
+}
+</script>
+{% endblock %}
