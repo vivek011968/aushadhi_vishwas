@@ -36,12 +36,13 @@ else:
     DB_FILE = 'database.db'
 
 def get_base_url():
-    # If on Vercel, use the provided environment variable
-    if os.environ.get('VERCEL_URL'):
-        return f"https://{os.environ.get('VERCEL_URL')}/"
-    # Fallback to local network IP for demo if available
-    local_ip = get_local_ip()
-    return f"http://{local_ip}:5000/"
+    # Use Flask's request.url_root for a dynamic, public base URL that always works
+    try:
+        return request.url_root
+    except:
+        if os.environ.get('VERCEL_URL'):
+            return f"https://{os.environ.get('VERCEL_URL')}/"
+        return f"http://{get_local_ip()}:5000/"
 
 # --- UNIFIED DATABASE HANDLER (SQLite <-> Postgres) ---
 def get_db_connection():
