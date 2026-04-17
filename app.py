@@ -229,6 +229,25 @@ def init_db():
         except:
             pass # Index might already exist
 
+    # Migration: Ensure existing tables have new columns
+    migration_steps = [
+        ("ALTER TABLE medicines ADD COLUMN manufacturer_id INTEGER", "medicines", "manufacturer_id")
+    ]
+    for sql, table, col in migration_steps:
+        try:
+            db_url = os.environ.get('DATABASE_URL')
+            is_postgres = True if db_url else False
+            if is_postgres:
+                # Postgres check
+                has_col = db_execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='{table}' AND column_name='{col}'", fetch="one")
+                if not has_col:
+                    db_execute(sql, commit=True)
+            else:
+                # SQLite (will fail silently if col exists via try-except)
+                db_execute(sql, commit=True)
+        except:
+            pass # Column likely already exists
+
     # Global Seeds
     seeds = [
         # Sun Pharma verified portal - Levipil 500 (Levetiracetam Tablets IP)
@@ -501,27 +520,32 @@ def manufacturer_dashboard():
     if not session.get('manufacturer_id'):
         return redirect(url_for('manufacturer_login'))
     
-    mfr = db_execute("SELECT * FROM manufacturers WHERE id = ?", (session['manufacturer_id'],), fetch="one")
-    if not mfr:
-        session.pop('manufacturer_id', None)
-        return redirect(url_for('manufacturer_login'))
-    
-    # Update session status in case admin changed it
-    session['manufacturer_status'] = mfr['status']
-    
-    # Get medicines registered by this manufacturer
-    medicines = db_execute("SELECT * FROM medicines WHERE manufacturer_id = ? ORDER BY id DESC", (mfr['id'],), fetch="all")
-    total_meds = len(medicines) if medicines else 0
-    
-    # Get total scans on their medicines
-    total_scans = 0
-    if medicines:
-        qr_ids = [m['qr_code_id'] for m in medicines]
-        for qr_id in qr_ids:
-            count = db_execute("SELECT COUNT(*) FROM scan_logs WHERE qr_code_id = ?", (qr_id,), fetch="one")[0]
-            total_scans += count
-    
-    return render_template('manufacturer_dashboard.html', manufacturer=mfr, medicines=medicines, total_meds=total_meds, total_scans=total_scans)
+    try:
+        mfr = db_execute("SELECT * FROM manufacturers WHERE id = ?", (session['manufacturer_id'],), fetch="one")
+        if not mfr:
+            session.pop('manufacturer_id', None)
+            return redirect(url_for('manufacturer_login'))
+        
+        # Update session status in case admin changed it
+        session['manufacturer_status'] = mfr['status']
+        
+        # Get medicines registered by this manufacturer
+        medicines = db_execute("SELECT * FROM medicines WHERE manufacturer_id = ? ORDER BY id DESC", (mfr['id'],), fetch="all")
+        total_meds = len(medicines) if medicines else 0
+        
+        # Get total scans on their medicines
+        total_scans = 0
+        if medicines:
+            qr_ids = [m['qr_code_id'] for m in medicines]
+            for qr_id in qr_ids:
+                scan_row = db_execute("SELECT COUNT(*) FROM scan_logs WHERE qr_code_id = ?", (qr_id,), fetch="one")
+                if scan_row:
+                    total_scans += scan_row[0]
+        
+        return render_template('manufacturer_dashboard.html', manufacturer=mfr, medicines=medicines, total_meds=total_meds, total_scans=total_scans)
+    except Exception as e:
+        print(f"DASHBOARD ERROR: {e}")
+        return f"<h3>Manufacturer Dashboard Error</h3><p>An error occurred while loading your data: {str(e)}</p><a href='/'>Return Home</a>", 500
 
 @app.route('/register', methods=['GET', 'POST'])
 def register_medicine():
