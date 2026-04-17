@@ -36,13 +36,18 @@ else:
     DB_FILE = 'database.db'
 
 def get_base_url():
-    # Use Flask's request.url_root for a dynamic, public base URL that always works
+    """Smart-Root: Ensures QR codes work on mobile even if viewed on localhost"""
+    local_ip = get_local_ip()
     try:
-        return request.url_root
+        url = request.url_root
+        # If accessing via localhost, swap with real IP for the QR code
+        if '127.0.0.1' in url or 'localhost' in url:
+            url = url.replace('127.0.0.1', local_ip).replace('localhost', local_ip)
+        return url
     except:
         if os.environ.get('VERCEL_URL'):
             return f"https://{os.environ.get('VERCEL_URL')}/"
-        return f"http://{get_local_ip()}:5000/"
+        return f"http://{local_ip}:5000/"
 
 # --- UNIFIED DATABASE HANDLER (SQLite <-> Postgres) ---
 def get_db_connection():
@@ -137,7 +142,8 @@ def init_db():
                     mfg_date TEXT NOT NULL,
                     exp_date TEXT NOT NULL,
                     distributor TEXT NOT NULL,
-                    qr_code_id TEXT UNIQUE NOT NULL
+                    qr_code_id TEXT UNIQUE NOT NULL,
+                    manufacturer_id INTEGER
                  )''',
         f'''CREATE TABLE IF NOT EXISTS supply_chain (
                     id {pk_type},
@@ -187,6 +193,23 @@ def init_db():
                     exp_date TEXT NOT NULL,
                     distributor TEXT NOT NULL,
                     trust_source TEXT NOT NULL
+                 )''',
+        f'''CREATE TABLE IF NOT EXISTS manufacturers (
+                    id {pk_type},
+                    company_name TEXT NOT NULL,
+                    drug_license_no TEXT UNIQUE NOT NULL,
+                    gst_number TEXT,
+                    fssai_license TEXT,
+                    contact_email TEXT NOT NULL,
+                    contact_phone TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    website TEXT,
+                    password TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    rejection_reason TEXT,
+                    trust_score INTEGER DEFAULT 0,
+                    applied_on TEXT NOT NULL,
+                    reviewed_on TEXT
                  )'''
     ]
     
@@ -389,11 +412,135 @@ def generate_qr():
         return render_template('generate_qr.html', success=True, qr_code_id=qr_code_id, base_url=base_url)
     return render_template('generate_qr.html')
 
+# ═══════════════════════════════════════════════════════════════════
+# MANUFACTURER KYC SYSTEM
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/manufacturer/register', methods=['GET', 'POST'])
+def manufacturer_register():
+    if request.method == 'POST':
+        company_name = request.form['company_name']
+        drug_license_no = request.form['drug_license_no'].strip().upper()
+        gst_number = request.form.get('gst_number', '').strip().upper()
+        fssai_license = request.form.get('fssai_license', '').strip()
+        contact_email = request.form['contact_email'].strip()
+        contact_phone = request.form['contact_phone'].strip()
+        address = request.form['address'].strip()
+        website = request.form.get('website', '').strip()
+        password = request.form['password']
+        confirm_password = request.form['confirm_password']
+        
+        # Validation
+        if password != confirm_password:
+            return render_template('manufacturer_register.html', error="Passwords do not match.")
+        
+        if len(password) < 6:
+            return render_template('manufacturer_register.html', error="Password must be at least 6 characters.")
+        
+        if not drug_license_no or len(drug_license_no) < 5:
+            return render_template('manufacturer_register.html', error="Please provide a valid Drug License Number.")
+        
+        # Check if drug license already registered
+        existing = db_execute("SELECT id FROM manufacturers WHERE drug_license_no = ?", (drug_license_no,), fetch="one")
+        if existing:
+            return render_template('manufacturer_register.html', error="This Drug License Number is already registered. Please login instead.")
+        
+        # Calculate initial trust score based on fields provided
+        trust_score = 10  # Base for registration
+        if gst_number and len(gst_number) >= 15:
+            trust_score += 20
+        if fssai_license:
+            trust_score += 15
+        if website:
+            trust_score += 5
+        if '@' in contact_email and '.' in contact_email:
+            trust_score += 10
+        
+        hashed_password = generate_password_hash(password)
+        applied_on = str(datetime.now())
+        
+        try:
+            db_execute('''INSERT INTO manufacturers 
+                (company_name, drug_license_no, gst_number, fssai_license, contact_email, contact_phone, address, website, password, status, trust_score, applied_on)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)''',
+                (company_name, drug_license_no, gst_number, fssai_license, contact_email, contact_phone, address, website, hashed_password, trust_score, applied_on), commit=True)
+            
+            return render_template('manufacturer_register.html', success=True)
+        except Exception as e:
+            print(f"Manufacturer Register Error: {e}")
+            return render_template('manufacturer_register.html', error=f"Registration failed: {str(e)}")
+    
+    return render_template('manufacturer_register.html')
+
+@app.route('/manufacturer/login', methods=['GET', 'POST'])
+def manufacturer_login():
+    if request.method == 'POST':
+        drug_license_no = request.form['drug_license_no'].strip().upper()
+        password = request.form['password']
+        
+        mfr = db_execute("SELECT * FROM manufacturers WHERE drug_license_no = ?", (drug_license_no,), fetch="one")
+        
+        if mfr and check_password_hash(mfr['password'], password):
+            session['manufacturer_id'] = mfr['id']
+            session['manufacturer_name'] = mfr['company_name']
+            session['manufacturer_status'] = mfr['status']
+            return redirect(url_for('manufacturer_dashboard'))
+        
+        return render_template('manufacturer_login.html', error="Invalid Drug License Number or Password.")
+    return render_template('manufacturer_login.html')
+
+@app.route('/manufacturer/logout')
+def manufacturer_logout():
+    session.pop('manufacturer_id', None)
+    session.pop('manufacturer_name', None)
+    session.pop('manufacturer_status', None)
+    return redirect(url_for('home'))
+
+@app.route('/manufacturer/dashboard')
+def manufacturer_dashboard():
+    if not session.get('manufacturer_id'):
+        return redirect(url_for('manufacturer_login'))
+    
+    mfr = db_execute("SELECT * FROM manufacturers WHERE id = ?", (session['manufacturer_id'],), fetch="one")
+    if not mfr:
+        session.pop('manufacturer_id', None)
+        return redirect(url_for('manufacturer_login'))
+    
+    # Update session status in case admin changed it
+    session['manufacturer_status'] = mfr['status']
+    
+    # Get medicines registered by this manufacturer
+    medicines = db_execute("SELECT * FROM medicines WHERE manufacturer_id = ? ORDER BY id DESC", (mfr['id'],), fetch="all")
+    total_meds = len(medicines) if medicines else 0
+    
+    # Get total scans on their medicines
+    total_scans = 0
+    if medicines:
+        qr_ids = [m['qr_code_id'] for m in medicines]
+        for qr_id in qr_ids:
+            count = db_execute("SELECT COUNT(*) FROM scan_logs WHERE qr_code_id = ?", (qr_id,), fetch="one")[0]
+            total_scans += count
+    
+    return render_template('manufacturer_dashboard.html', manufacturer=mfr, medicines=medicines, total_meds=total_meds, total_scans=total_scans)
+
 @app.route('/register', methods=['GET', 'POST'])
 def register_medicine():
+    # Now requires manufacturer login
+    if not session.get('manufacturer_id'):
+        return redirect(url_for('manufacturer_login'))
+    
+    mfr = db_execute("SELECT * FROM manufacturers WHERE id = ?", (session['manufacturer_id'],), fetch="one")
+    if not mfr:
+        return redirect(url_for('manufacturer_login'))
+    
+    # Rejected manufacturers cannot generate QR codes
+    if mfr['status'] == 'rejected':
+        return render_template('generate_qr.html', is_public=True, manufacturer=mfr,
+                             error="Your manufacturer account has been rejected. You cannot generate QR codes. Reason: " + (mfr['rejection_reason'] or 'Not specified'))
+    
     if request.method == 'POST':
         name = request.form['name']
-        manufacturer = request.form['manufacturer']
+        manufacturer = mfr['company_name']  # Use verified company name
         mfg_date = request.form['mfg_date']
         exp_date = request.form['exp_date']
         distributor = request.form['distributor']
@@ -407,30 +554,87 @@ def register_medicine():
         
         # Simulated Blockchain Root
         timestamp = str(datetime.now())
-        stage_info = f"Manufactured. Sent to Distributor: {distributor}"
+        stage_info = f"Manufactured by {manufacturer}. Sent to Distributor: {distributor}"
         root_hash = generate_hash(f"ROOT-{qr_code_id}-{timestamp}")
         
         try:
             db_execute('''INSERT INTO medicines 
-                            (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                         (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id), commit=True)
+                            (name, manufacturer, batch_number, mfg_date, exp_date, distributor, qr_code_id, manufacturer_id) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                         (name, manufacturer, batch, mfg_date, exp_date, distributor, qr_code_id, mfr['id']), commit=True)
             
             # Initial supply chain record (Genesis Block)
             db_execute('''INSERT INTO supply_chain (qr_code_id, stage, timestamp, previous_hash, current_hash) 
                             VALUES (?, ?, ?, ?, ?)''', (qr_code_id, stage_info, timestamp, "0", root_hash), commit=True)
         except Exception as e:
-            # More descriptive error for debugging (will show in the alert)
             err_msg = str(e)
             print(f"Register Medicine Error: {err_msg}")
-            if "relation" in err_msg.lower() and "does not exist" in err_msg.lower():
-                return render_template('generate_qr.html', error="Tables missing in database! Please visit [your_app_url]/admin/init-db-cloud to set them up.", is_public=True)
-            return render_template('generate_qr.html', error=f"Register failed: {err_msg}", is_public=True)
+            return render_template('generate_qr.html', error=f"Register failed: {err_msg}", is_public=True, manufacturer=mfr)
             
         base_url = get_base_url()
         
-        return render_template('generate_qr.html', success=True, qr_code_id=qr_code_id, base_url=base_url, is_public=True)
-    return render_template('generate_qr.html', is_public=True)
+        return render_template('generate_qr.html', success=True, qr_code_id=qr_code_id, base_url=base_url, is_public=True, manufacturer=mfr)
+    return render_template('generate_qr.html', is_public=True, manufacturer=mfr)
+
+# --- Admin Manufacturer Management ---
+
+@app.route('/admin/manufacturers')
+def admin_manufacturers():
+    if not session.get('admin'):
+        return redirect(url_for('login'))
+    
+    status_filter = request.args.get('status', 'all')
+    
+    if status_filter == 'all':
+        manufacturers = db_execute("SELECT * FROM manufacturers ORDER BY applied_on DESC", fetch="all")
+    else:
+        manufacturers = db_execute("SELECT * FROM manufacturers WHERE status = ? ORDER BY applied_on DESC", (status_filter,), fetch="all")
+    
+    # Count by status for tabs
+    pending_count = db_execute("SELECT COUNT(*) FROM manufacturers WHERE status = 'pending'", fetch="one")[0]
+    verified_count = db_execute("SELECT COUNT(*) FROM manufacturers WHERE status = 'verified'", fetch="one")[0]
+    rejected_count = db_execute("SELECT COUNT(*) FROM manufacturers WHERE status = 'rejected'", fetch="one")[0]
+    
+    return render_template('admin_manufacturers.html', manufacturers=manufacturers, 
+                         status_filter=status_filter,
+                         pending_count=pending_count, verified_count=verified_count, rejected_count=rejected_count)
+
+@app.route('/api/manufacturer/approve', methods=['POST'])
+def approve_manufacturer():
+    if not session.get('admin'):
+        return jsonify({"success": False, "message": "Unauthorized"}), 403
+    
+    data = request.json
+    mfr_id = data.get('manufacturer_id')
+    
+    if not mfr_id:
+        return jsonify({"success": False, "message": "Missing manufacturer ID"}), 400
+    
+    try:
+        db_execute("UPDATE manufacturers SET status = 'verified', reviewed_on = ?, trust_score = trust_score + 50, rejection_reason = NULL WHERE id = ?",
+                  (str(datetime.now()), mfr_id), commit=True)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/manufacturer/reject', methods=['POST'])
+def reject_manufacturer():
+    if not session.get('admin'):
+        return jsonify({"success": False, "message": "Unauthorized"}), 403
+    
+    data = request.json
+    mfr_id = data.get('manufacturer_id')
+    reason = data.get('reason', 'Application rejected by admin')
+    
+    if not mfr_id:
+        return jsonify({"success": False, "message": "Missing manufacturer ID"}), 400
+    
+    try:
+        db_execute("UPDATE manufacturers SET status = 'rejected', reviewed_on = ?, rejection_reason = ?, trust_score = 0 WHERE id = ?",
+                  (str(datetime.now()), reason, mfr_id), commit=True)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/delete_medicine/<path:qr_id>')
 def delete_medicine(qr_id):
@@ -697,6 +901,14 @@ def verify_medicine(medicine_id):
                 }
     else:
         # Populating base med_details for ALL local medicine states
+        # Get manufacturer verification status
+        mfr_status = "unknown"
+        mfr_details = None
+        if 'manufacturer_id' in medicine.keys() and medicine['manufacturer_id']:
+            mfr_details = db_execute("SELECT company_name, drug_license_no, status, trust_score FROM manufacturers WHERE id = ?", (medicine['manufacturer_id'],), fetch="one")
+            if mfr_details:
+                mfr_status = mfr_details['status']
+        
         med_details = {
             "name": medicine["name"],
             "manufacturer": medicine["manufacturer"],
@@ -706,7 +918,10 @@ def verify_medicine(medicine_id):
             "distributor": medicine["distributor"],
             "is_external": False,
             "trust_source": "Aushadhi Vishwas Internal DB",
-            "raw_data": medicine_id
+            "raw_data": medicine_id,
+            "manufacturer_status": mfr_status,
+            "manufacturer_license": mfr_details['drug_license_no'] if mfr_details else None,
+            "manufacturer_trust_score": mfr_details['trust_score'] if mfr_details else 0
         }
 
         # Check expiry

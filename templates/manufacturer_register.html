@@ -1,0 +1,282 @@
+{% extends 'base.html' %}
+
+{% block body_class %}animated-bg{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="text-center mb-4 animate-fade-in-up">
+                <div class="feature-icon-wrapper mx-auto text-primary" style="width:72px;height:72px;font-size:2rem;">
+                    <i class="fa-solid fa-building-shield"></i>
+                </div>
+                <h2 class="fw-bold mt-3">Manufacturer KYC Registration</h2>
+                <p class="text-muted">Register your pharmaceutical company with verified credentials to generate trusted QR codes.</p>
+            </div>
+
+            {% if success %}
+            <div class="glass-card p-5 text-center animate-fade-in-up">
+                <div style="font-size:4rem;color:#10b981;">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
+                <h3 class="fw-bold mt-3 text-success">Application Submitted!</h3>
+                <p class="text-muted mt-2 mb-4">
+                    Your manufacturer registration is now <strong>under review</strong>. Our admin team will verify your credentials 
+                    (Drug License, GST, etc.) and approve your account.
+                </p>
+                <div class="alert alert-info d-inline-block">
+                    <i class="fa-solid fa-info-circle"></i> 
+                    You can <strong>log in immediately</strong> and start generating QR codes. However, they will be marked as 
+                    <span class="badge bg-warning text-dark">⏳ Pending Verification</span> until your account is approved.
+                </div>
+                <div class="mt-4">
+                    <a href="{{ url_for('manufacturer_login') }}" class="btn btn-custom">
+                        <i class="fa-solid fa-right-to-bracket"></i> Login to Your Portal
+                    </a>
+                </div>
+            </div>
+            {% else %}
+
+            <div class="glass-card p-4 animate-fade-in-up delay-100">
+                {% if error %}
+                <div class="alert alert-danger">
+                    <i class="fa-solid fa-circle-exclamation"></i> {{ error }}
+                </div>
+                {% endif %}
+
+                <form method="POST" id="kyc-form" novalidate>
+                    <!-- Step Indicators -->
+                    <div class="d-flex justify-content-center mb-4 gap-2">
+                        <span class="kyc-step active" id="step-ind-1"><i class="fa-solid fa-building"></i> Company</span>
+                        <span class="kyc-step" id="step-ind-2"><i class="fa-solid fa-id-card"></i> Licenses</span>
+                        <span class="kyc-step" id="step-ind-3"><i class="fa-solid fa-lock"></i> Security</span>
+                    </div>
+
+                    <!-- STEP 1: Company Info -->
+                    <div id="step-1" class="kyc-panel">
+                        <h5 class="fw-bold mb-3 text-primary"><i class="fa-solid fa-building"></i> Company Information</h5>
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label class="form-label fw-bold">Company / Manufacturer Name <span class="text-danger">*</span></label>
+                                <input type="text" name="company_name" class="form-control" placeholder="e.g. Sun Pharma Laboratories Ltd." required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Contact Email <span class="text-danger">*</span></label>
+                                <input type="email" name="contact_email" class="form-control" placeholder="official@company.com" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Contact Phone <span class="text-danger">*</span></label>
+                                <input type="tel" name="contact_phone" class="form-control" placeholder="+91 98XXXXXXXX" required>
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <label class="form-label fw-bold">Registered Address <span class="text-danger">*</span></label>
+                                <textarea name="address" class="form-control" rows="2" placeholder="Full registered office address" required></textarea>
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <label class="form-label fw-bold">Company Website</label>
+                                <input type="url" name="website" class="form-control" placeholder="https://www.company.com">
+                                <small class="text-muted">Having a website increases your trust score.</small>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-custom w-100 mt-2" onclick="showStep(2)">
+                            Next: License Details <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </div>
+
+                    <!-- STEP 2: License Info -->
+                    <div id="step-2" class="kyc-panel" style="display:none;">
+                        <h5 class="fw-bold mb-3 text-primary"><i class="fa-solid fa-id-card"></i> License & Certification</h5>
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label class="form-label fw-bold">Drug License Number <span class="text-danger">*</span></label>
+                                <input type="text" name="drug_license_no" class="form-control" placeholder="e.g. DL-MH-2024-001234" required>
+                                <small class="text-muted">Issued by CDSCO / State Drug Controller. This is your login ID.</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">GST Number</label>
+                                <input type="text" name="gst_number" class="form-control" placeholder="e.g. 27AABCU9603R1ZM" maxlength="15">
+                                <small class="text-muted">15-digit GSTIN. Adds +20 to trust score.</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">FSSAI License</label>
+                                <input type="text" name="fssai_license" class="form-control" placeholder="e.g. 10014012000789">
+                                <small class="text-muted">Food Safety certification. Adds +15 to trust score.</small>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-light border mt-3">
+                            <h6 class="fw-bold"><i class="fa-solid fa-shield-halved text-primary"></i> Trust Score Calculation</h6>
+                            <div class="small text-muted">
+                                <span class="badge bg-primary">+10</span> Basic Registration &nbsp;
+                                <span class="badge bg-success">+20</span> Valid GST Number &nbsp;
+                                <span class="badge bg-info">+15</span> FSSAI License &nbsp;
+                                <span class="badge bg-secondary">+5</span> Website URL &nbsp;
+                                <span class="badge bg-warning text-dark">+10</span> Valid Email &nbsp;
+                                <span class="badge bg-danger">+50</span> Admin Approval
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="button" class="btn btn-outline-secondary w-50" onclick="showStep(1)">
+                                <i class="fa-solid fa-arrow-left"></i> Back
+                            </button>
+                            <button type="button" class="btn btn-custom w-50" onclick="showStep(3)">
+                                Next: Set Password <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 3: Password -->
+                    <div id="step-3" class="kyc-panel" style="display:none;">
+                        <h5 class="fw-bold mb-3 text-primary"><i class="fa-solid fa-lock"></i> Account Security</h5>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Create Password <span class="text-danger">*</span></label>
+                                <input type="password" name="password" class="form-control" minlength="6" required>
+                                <small class="text-muted">Minimum 6 characters</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Confirm Password <span class="text-danger">*</span></label>
+                                <input type="password" name="confirm_password" class="form-control" minlength="6" required>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-warning mt-3">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <strong>Important:</strong> Your <strong>Drug License Number</strong> will be your login ID. 
+                            Keep your password secure. Our admin will verify your credentials before granting full access.
+                        </div>
+
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="button" class="btn btn-outline-secondary w-50" onclick="showStep(2)">
+                                <i class="fa-solid fa-arrow-left"></i> Back
+                            </button>
+                            <button type="submit" class="btn btn-custom w-50">
+                                <i class="fa-solid fa-paper-plane"></i> Submit Application
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="text-center mt-4">
+                <p class="text-muted">Already registered? 
+                    <a href="{{ url_for('manufacturer_login') }}" class="fw-bold text-primary">Login here</a>
+                </p>
+            </div>
+
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showStep(step) {
+    const panels = document.querySelectorAll('.kyc-panel');
+    const currentPanel = Array.from(panels).find(p => p.style.display !== 'none') || panels[0];
+    const currentStep = parseInt(currentPanel.id.split('-')[1]);
+    
+    // If moving forward, validate current step
+    if (step > currentStep) {
+        if (!validatePanel(currentPanel)) {
+            showToast('Please fill in all required fields marked with *', 'error');
+            return;
+        }
+    }
+
+    // Switch panels
+    panels.forEach(panel => {
+        const panelId = parseInt(panel.id.split('-')[1]);
+        panel.style.display = (panelId === step) ? 'block' : 'none';
+    });
+
+    // Update indicators
+    document.querySelectorAll('.kyc-step').forEach(s => s.classList.remove('active'));
+    document.getElementById('step-ind-' + step).classList.add('active');
+    window.scrollTo(0, 0);
+}
+
+function validatePanel(panel) {
+    const inputs = panel.querySelectorAll('input[required], textarea[required], select[required]');
+    let valid = true;
+    inputs.forEach(input => {
+        if (!input.value.trim()) {
+            input.classList.add('is-invalid');
+            valid = false;
+        } else {
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+        }
+    });
+    return valid;
+}
+
+// Add real-time validation feedback
+document.querySelectorAll('#kyc-form input, #kyc-form textarea').forEach(input => {
+    input.addEventListener('input', () => {
+        if (input.value.trim()) {
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+        } else if (input.hasAttribute('required')) {
+            input.classList.add('is-invalid');
+            input.classList.remove('is-valid');
+        }
+    });
+});
+
+// Form submission handler
+document.getElementById('kyc-form').addEventListener('submit', function(e) {
+    e.preventDefault(); // Control everything manually
+    
+    const panels = document.querySelectorAll('.kyc-panel');
+    let allValid = true;
+    let firstInvalidStep = 0;
+
+    // Validate ALL steps
+    panels.forEach((panel, index) => {
+        if (!validatePanel(panel)) {
+            allValid = false;
+            if (firstInvalidStep === 0) firstInvalidStep = index + 1;
+        }
+    });
+
+    if (!allValid) {
+        showToast('Some required fields are missing in Step ' + firstInvalidStep, 'error');
+        showStep(firstInvalidStep);
+        return;
+    }
+
+    // Password matching check
+    const pass = this.querySelector('input[name="password"]').value;
+    const confirm = this.querySelector('input[name="confirm_password"]').value;
+    
+    if (pass !== confirm) {
+        showToast('Passwords do not match!', 'error');
+        const confirmField = this.querySelector('input[name="confirm_password"]');
+        confirmField.classList.add('is-invalid');
+        showStep(3);
+        confirmField.focus();
+        return;
+    }
+
+    if (pass.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        showStep(3);
+        return;
+    }
+
+    // If everything is perfect, submit the form!
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
+    
+    this.submit();
+});
+</script>
+<style>
+.is-invalid { border-color: #ef4444 !important; background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23ef4444'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23ef4444' stroke='none'/%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right calc(0.375em + 0.1875rem) center; background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem); }
+.is-valid { border-color: #10b981 !important; }
+</style>
+{% endblock %}

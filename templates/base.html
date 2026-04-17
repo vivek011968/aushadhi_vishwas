@@ -37,7 +37,11 @@
                     {% if not session.get('admin') %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Home</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('scanner') }}">Verify Medicine</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('register_medicine') }}">Manufacturer Portal</a></li>
+                        {% if session.get('manufacturer_id') %}
+                            <li class="nav-item"><a class="nav-link" href="{{ url_for('manufacturer_dashboard') }}"><i class="fa-solid fa-industry"></i> My Portal</a></li>
+                        {% else %}
+                            <li class="nav-item"><a class="nav-link" href="{{ url_for('manufacturer_login') }}">Manufacturer Portal</a></li>
+                        {% endif %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('complaints') }}">Report Fake</a></li>
                         <li class="nav-item ms-lg-3"><a class="btn btn-sm btn-outline-light" href="{{ url_for('login') }}">Admin Login</a></li>
                     {% endif %}

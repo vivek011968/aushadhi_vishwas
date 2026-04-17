@@ -27,7 +27,7 @@
         </div>
 
         <!-- ===== STATUS BADGE ===== -->
-        <div style="padding: 14px 20px;">
+        <div style="padding: 14px 20px 0 20px;">
             {% if 'Verified' in status %}
             <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #22c55e; color: #166534; background: #f0fdf4; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
                 <i class="fa-solid fa-circle-check" style="color: #22c55e;"></i>
@@ -52,6 +52,37 @@
             <div style="display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid #94a3b8; color: #475569; background: #f8fafc; padding: 7px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;">
                 <i class="fa-solid fa-circle-question" style="color: #94a3b8;"></i>
                 Not Registered in Database
+            </div>
+            {% endif %}
+
+            <!-- Manufacturer Trust Section -->
+            {% if medicine and medicine.manufacturer_status %}
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: rgba(255,255,255,0.7); border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.5);">
+                {% if medicine.manufacturer_status == 'verified' %}
+                    <div style="background: #10b981; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+                        <i class="fa-solid fa-shield-check"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #064e3b; letter-spacing: 0.3px;">VERIFIED MANUFACTURER</div>
+                        <div style="font-size: 0.7rem; color: #065f46; opacity: 0.8;">Govt. License & KYC Approved</div>
+                    </div>
+                {% elif medicine.manufacturer_status == 'pending' %}
+                    <div style="background: #f59e0b; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #92400e; letter-spacing: 0.3px;">PENDING VERIFICATION</div>
+                        <div style="font-size: 0.7rem; color: #92400e; opacity: 0.8;">Manufacturer KYC under review</div>
+                    </div>
+                {% else %}
+                    <div style="background: #ef4444; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #7f1d1d; letter-spacing: 0.3px;">UNTRUSTED SOURCE</div>
+                        <div style="font-size: 0.7rem; color: #991b1b; opacity: 0.8;">No verified manufacturer record</div>
+                    </div>
+                {% endif %}
             </div>
             {% endif %}
         </div>
@@ -92,9 +123,16 @@
                     <tr style="border-bottom: 1px solid #f1f5f9;">
                         <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Manufacturer</td>
                         <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; color: #1e293b; vertical-align: top;">
-                            {{ medicine.manufacturer }}
+                            <div class="fw-bold">{{ medicine.manufacturer }}</div>
+                            {% if medicine.manufacturer_license %}
+                                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">
+                                    <i class="fa-solid fa-id-card"></i> Lic: {{ medicine.manufacturer_license }}
+                                </div>
+                            {% endif %}
                             {% if medicine.distributor and medicine.distributor != 'N/A' %}
-                            <br><span style="color:#64748b; font-size:0.8rem;">Dist: {{ medicine.distributor }}</span>
+                            <div style="color:#64748b; font-size:0.75rem; margin-top: 2px;">
+                                <i class="fa-solid fa-truck"></i> Dist: {{ medicine.distributor }}
+                            </div>
                             {% endif %}
                         </td>
                     </tr>
@@ -114,7 +152,7 @@
                     {% if medicine.exp_date and medicine.exp_date != 'N/A' %}
                     <tr style="border-bottom: 1px solid #f1f5f9;">
                         <td style="padding: 10px 0; font-size: 0.83rem; color: #64748b; font-weight: 500; vertical-align: top;">Date of Expiry</td>
-                        <td style="padding: 10px 0 10px 8px; font-size: 0.85rem; font-weight: 700; vertical-align: top; {% if 'Expired' in status %}color: #dc2626;{% else %}color: #15803d;{% endif %}">
+                        <td class="{% if 'Expired' in status %}text-trust-low{% else %}text-trust-high{% endif %}" style="padding: 10px 0 10px 8px; font-size: 0.85rem; font-weight: 700; vertical-align: top;">
                             {{ medicine.exp_date }}
                             {% if 'Expired' in status %}<span style="font-size:0.72rem; background:#fef2f2; color:#dc2626; padding:1px 6px; border-radius:4px; margin-left:4px;">EXPIRED</span>{% endif %}
                         </td>
@@ -164,7 +202,7 @@
         <!-- ===== FOOTER ACTIONS ===== -->
         <div style="padding: 16px 20px; border-top: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 10px;">
             {% if ('Unknown' in status or 'Suspicious' in status) and session.get('admin') %}
-            <button onclick="registerAsTrustedPage('{{ medicine.raw_data }}')"
+            <button data-qr="{{ medicine.raw_data }}" onclick="registerAsTrustedPage(this)"
                 style="background: #1d4ed8; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">
                 <i class="fa-solid fa-plus-circle"></i> Register as Trusted (Admin)
             </button>
@@ -196,7 +234,8 @@
 </div>
 
 <script>
-function registerAsTrustedPage(qrContent) {
+function registerAsTrustedPage(el) {
+    const qrContent = el.dataset.qr;
     if (confirm("Register this external product as a trusted medicine?")) {
         const name = prompt("Enter Medicine Name:", "Unknown Medicine");
         const manufacturer = prompt("Enter Manufacturer:", "Unknown Manufacturer");

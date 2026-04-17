@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block body_class %}animated-bg{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="text-center mb-4 animate-fade-in-up">
+                <div class="feature-icon-wrapper mx-auto text-primary" style="width:72px;height:72px;font-size:2rem;">
+                    <i class="fa-solid fa-industry"></i>
+                </div>
+                <h2 class="fw-bold mt-3">Manufacturer Login</h2>
+                <p class="text-muted">Access your verified manufacturer portal</p>
+            </div>
+
+            <div class="glass-card p-4 animate-fade-in-up delay-100">
+                {% if error %}
+                <div class="alert alert-danger">
+                    <i class="fa-solid fa-circle-exclamation"></i> {{ error }}
+                </div>
+                {% endif %}
+
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold"><i class="fa-solid fa-id-card"></i> Drug License Number</label>
+                        <input type="text" name="drug_license_no" class="form-control form-control-lg" 
+                               placeholder="e.g. DL-MH-2024-001234" required 
+                               style="text-transform: uppercase;">
+                        <small class="text-muted">The license number you registered with</small>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold"><i class="fa-solid fa-lock"></i> Password</label>
+                        <input type="password" name="password" class="form-control form-control-lg" required>
+                    </div>
+                    <button type="submit" class="btn btn-custom w-100">
+                        <i class="fa-solid fa-right-to-bracket"></i> Login
+                    </button>
+                </form>
+            </div>
+
+            <div class="text-center mt-4">
+                <p class="text-muted">Don't have an account? 
+                    <a href="{{ url_for('manufacturer_register') }}" class="fw-bold text-primary">Register your company</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

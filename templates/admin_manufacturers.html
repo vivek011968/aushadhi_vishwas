@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('generate_qr') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_medicines') }}"><i class="fa-solid fa-boxes-stacked"></i> Manage Medicines</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('history') }}"><i class="fa-solid fa-list"></i> Scan History</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('fake_map') }}"><i class="fa-solid fa-map-location-dot"></i> Fake Alert Map</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a></li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="{{ url_for('admin_manufacturers') }}">
+                        <i class="fa-solid fa-building-shield"></i> Manufacturers
+                        {% if pending_count > 0 %}
+                        <span class="badge bg-danger ms-1">{{ pending_count }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+                <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <h3 class="text-primary mb-4"><i class="fa-solid fa-building-shield"></i> Manufacturer KYC Verification</h3>
+
+            <!-- Status Filter Tabs -->
+            <div class="d-flex gap-2 mb-4 flex-wrap">
+                <a href="{{ url_for('admin_manufacturers', status='all') }}" 
+                   class="btn {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %} btn-sm">
+                    All ({{ pending_count + verified_count + rejected_count }})
+                </a>
+                <a href="{{ url_for('admin_manufacturers', status='pending') }}" 
+                   class="btn {% if status_filter == 'pending' %}btn-warning{% else %}btn-outline-warning{% endif %} btn-sm">
+                    <i class="fa-solid fa-clock"></i> Pending ({{ pending_count }})
+                </a>
+                <a href="{{ url_for('admin_manufacturers', status='verified') }}" 
+                   class="btn {% if status_filter == 'verified' %}btn-success{% else %}btn-outline-success{% endif %} btn-sm">
+                    <i class="fa-solid fa-circle-check"></i> Verified ({{ verified_count }})
+                </a>
+                <a href="{{ url_for('admin_manufacturers', status='rejected') }}" 
+                   class="btn {% if status_filter == 'rejected' %}btn-danger{% else %}btn-outline-danger{% endif %} btn-sm">
+                    <i class="fa-solid fa-ban"></i> Rejected ({{ rejected_count }})
+                </a>
+            </div>
+
+            {% if pending_count > 0 and status_filter in ['all', 'pending'] %}
+            <div class="alert alert-warning">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <strong>{{ pending_count }} manufacturer(s)</strong> awaiting your verification. Review their KYC documents before approving.
+            </div>
+            {% endif %}
+
+            <!-- Manufacturer Cards -->
+            {% for mfr in manufacturers %}
+            <div class="glass-card p-4 mb-3 {% if mfr.status == 'verified' %}border-trust-high{% elif mfr.status == 'pending' %}border-trust-med{% else %}border-trust-low{% endif %}" id="mfr-card-{{ mfr.id }}">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <h5 class="fw-bold mb-0">{{ mfr.company_name }}</h5>
+                            {% if mfr.status == 'verified' %}
+                                <span class="badge bg-success"><i class="fa-solid fa-circle-check"></i> Verified</span>
+                            {% elif mfr.status == 'pending' %}
+                                <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock"></i> Pending</span>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="fa-solid fa-ban"></i> Rejected</span>
+                            {% endif %}
+                            <span class="badge bg-info">Trust: {{ mfr.trust_score }}/110</span>
+                        </div>
+                        
+                        <div class="row small">
+                            <div class="col-md-6">
+                                <p class="mb-1"><i class="fa-solid fa-id-card text-primary"></i> <strong>Drug License:</strong> <code>{{ mfr.drug_license_no }}</code></p>
+                                <p class="mb-1"><i class="fa-solid fa-file-invoice text-success"></i> <strong>GST:</strong> {{ mfr.gst_number or '❌ Not Provided' }}</p>
+                                <p class="mb-1"><i class="fa-solid fa-certificate text-info"></i> <strong>FSSAI:</strong> {{ mfr.fssai_license or '❌ Not Provided' }}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p class="mb-1"><i class="fa-solid fa-envelope"></i> {{ mfr.contact_email }}</p>
+                                <p class="mb-1"><i class="fa-solid fa-phone"></i> {{ mfr.contact_phone }}</p>
+                                <p class="mb-1"><i class="fa-solid fa-location-dot"></i> {{ mfr.address }}</p>
+                                {% if mfr.website %}
+                                <p class="mb-1"><i class="fa-solid fa-globe"></i> <a href="{{ mfr.website }}" target="_blank">{{ mfr.website }}</a></p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-2 mb-0">
+                            <i class="fa-solid fa-calendar"></i> Applied: {{ mfr.applied_on[:19] }}
+                            {% if mfr.reviewed_on %}
+                             | Reviewed: {{ mfr.reviewed_on[:19] }}
+                            {% endif %}
+                            {% if mfr.rejection_reason %}
+                            <br><span class="text-danger"><i class="fa-solid fa-circle-xmark"></i> Reason: {{ mfr.rejection_reason }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4 d-flex flex-column justify-content-center gap-2">
+                        {% if mfr.status == 'pending' %}
+                        <button class="btn btn-success btn-sm" data-id="{{ mfr.id }}" data-name="{{ mfr.company_name }}" onclick="approveMfr(this)">
+                            <i class="fa-solid fa-circle-check"></i> Approve
+                        </button>
+                        <button class="btn btn-danger btn-sm" data-id="{{ mfr.id }}" data-name="{{ mfr.company_name }}" onclick="rejectMfr(this)">
+                            <i class="fa-solid fa-ban"></i> Reject
+                        </button>
+                        {% elif mfr.status == 'verified' %}
+                        <button class="btn btn-outline-danger btn-sm" data-id="{{ mfr.id }}" data-name="{{ mfr.company_name }}" onclick="rejectMfr(this)">
+                            <i class="fa-solid fa-ban"></i> Revoke Verification
+                        </button>
+                        {% elif mfr.status == 'rejected' %}
+                        <button class="btn btn-outline-success btn-sm" data-id="{{ mfr.id }}" data-name="{{ mfr.company_name }}" onclick="approveMfr(this)">
+                            <i class="fa-solid fa-circle-check"></i> Re-Approve
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="glass-card p-5 text-center text-muted">
+                <i class="fa-solid fa-building fa-3x mb-3"></i>
+                <h5>No manufacturers found for this filter.</h5>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function approveMfr(el) {
+    const id = el.dataset.id;
+    const name = el.dataset.name;
+    if (!confirm('Approve manufacturer "' + name + '"? Their QR codes will be marked as trusted.')) return;
+    
+    fetch('/api/manufacturer/approve', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ manufacturer_id: id })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast(name + ' has been APPROVED ✅', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Error: ' + data.message, 'error');
+        }
+    });
+}
+
+function rejectMfr(el) {
+    const id = el.dataset.id;
+    const name = el.dataset.name;
+    const reason = prompt('Enter rejection reason for "' + name + '":');
+    if (reason === null) return;
+    
+    fetch('/api/manufacturer/reject', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ manufacturer_id: id, reason: reason || 'Rejected by admin' })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast(name + ' has been REJECTED ❌', 'error');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Error: ' + data.message, 'error');
+        }
+    });
+}
+</script>
+{% endblock %}

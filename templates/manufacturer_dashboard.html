@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Manufacturer Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <div class="mb-3">
+                <small class="text-muted d-block">Logged in as</small>
+                <h6 class="text-white mb-1">{{ manufacturer.company_name }}</h6>
+                {% if manufacturer.status == 'verified' %}
+                    <span class="badge bg-success"><i class="fa-solid fa-circle-check"></i> Verified</span>
+                {% elif manufacturer.status == 'pending' %}
+                    <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock"></i> Pending Review</span>
+                {% else %}
+                    <span class="badge bg-danger"><i class="fa-solid fa-ban"></i> Rejected</span>
+                {% endif %}
+            </div>
+            <hr style="border-color: rgba(255,255,255,0.2);">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link active" href="{{ url_for('manufacturer_dashboard') }}">
+                        <i class="fa-solid fa-chart-line"></i> Dashboard
+                    </a>
+                </li>
+                {% if manufacturer.status != 'rejected' %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('register_medicine') }}">
+                        <i class="fa-solid fa-qrcode"></i> Generate QR Code
+                    </a>
+                </li>
+                {% endif %}
+                <li class="nav-item mt-5">
+                    <a class="nav-link text-danger" href="{{ url_for('manufacturer_logout') }}">
+                        <i class="fa-solid fa-sign-out-alt"></i> Logout
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 p-4">
+            <h3 class="text-primary mb-4"><i class="fa-solid fa-industry"></i> Manufacturer Dashboard</h3>
+
+            <!-- Status Banner -->
+            {% if manufacturer.status == 'pending' %}
+            <div class="verify-banner warning mb-4">
+                <h4><i class="fa-solid fa-clock"></i> Verification Pending</h4>
+                <p class="mb-0">Your application is being reviewed by our admin team. You can generate QR codes, but they will be marked as <strong>"Unverified Manufacturer"</strong> until your account is approved.</p>
+            </div>
+            {% elif manufacturer.status == 'rejected' %}
+            <div class="verify-banner fake mb-4">
+                <h4><i class="fa-solid fa-ban"></i> Account Rejected</h4>
+                <p class="mb-1">Your manufacturer application has been rejected.</p>
+                {% if manufacturer.rejection_reason %}
+                <p class="mb-0"><strong>Reason:</strong> {{ manufacturer.rejection_reason }}</p>
+                {% endif %}
+                <p class="mt-2 mb-0"><small>Please contact support if you believe this is an error.</small></p>
+            </div>
+            {% elif manufacturer.status == 'verified' %}
+            <div class="verify-banner genuine mb-4">
+                <h4><i class="fa-solid fa-circle-check"></i> Verified Manufacturer</h4>
+                <p class="mb-0">Your account is fully verified. All QR codes generated will show the <strong>"Verified Manufacturer ✅"</strong> trust badge.</p>
+            </div>
+            {% endif %}
+
+            <!-- Stats Row -->
+            <div class="row mb-4">
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-capsules fa-2x text-primary mb-2"></i>
+                        <h5>Medicines</h5>
+                        <h2 class="fw-bold">{{ total_meds }}</h2>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-barcode fa-2x text-success mb-2"></i>
+                        <h5>Total Scans</h5>
+                        <h2 class="fw-bold text-success">{{ total_scans }}</h2>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-shield-halved fa-2x mb-2" style="color: #f59e0b;"></i>
+                        <h5>Trust Score</h5>
+                        <h2 class="fw-bold {% if manufacturer.trust_score >= 60 %}text-trust-high{% elif manufacturer.trust_score >= 30 %}text-trust-med{% else %}text-trust-low{% endif %}">
+                            {{ manufacturer.trust_score }}/110
+                        </h2>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="glass-card p-4 text-center">
+                        <i class="fa-solid fa-id-card fa-2x text-info mb-2"></i>
+                        <h5>License</h5>
+                        <p class="fw-bold small mb-0" style="word-break: break-all;">{{ manufacturer.drug_license_no }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Company Details Card -->
+            <div class="glass-card p-4 mb-4">
+                <h5 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-building"></i> Company Profile</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr><td class="fw-bold text-muted">Company</td><td>{{ manufacturer.company_name }}</td></tr>
+                            <tr><td class="fw-bold text-muted">Drug License</td><td><code>{{ manufacturer.drug_license_no }}</code></td></tr>
+                            <tr><td class="fw-bold text-muted">GST Number</td><td>{{ manufacturer.gst_number or 'Not Provided' }}</td></tr>
+                            <tr><td class="fw-bold text-muted">FSSAI License</td><td>{{ manufacturer.fssai_license or 'Not Provided' }}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr><td class="fw-bold text-muted">Email</td><td>{{ manufacturer.contact_email }}</td></tr>
+                            <tr><td class="fw-bold text-muted">Phone</td><td>{{ manufacturer.contact_phone }}</td></tr>
+                            <tr><td class="fw-bold text-muted">Address</td><td>{{ manufacturer.address }}</td></tr>
+                            <tr><td class="fw-bold text-muted">Applied On</td><td>{{ manufacturer.applied_on[:19] }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Medicines Table -->
+            <div class="glass-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-secondary mb-0"><i class="fa-solid fa-pills"></i> Your Registered Medicines</h5>
+                    {% if manufacturer.status != 'rejected' %}
+                    <a href="{{ url_for('register_medicine') }}" class="btn btn-sm btn-custom">
+                        <i class="fa-solid fa-plus"></i> Register New
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Medicine Name</th>
+                                <th>Batch</th>
+                                <th>Mfg Date</th>
+                                <th>Exp Date</th>
+                                <th>Distributor</th>
+                                <th>QR Code ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in medicines %}
+                            <tr>
+                                <td class="fw-bold">{{ m.name }}</td>
+                                <td><code>{{ m.batch_number }}</code></td>
+                                <td>{{ m.mfg_date }}</td>
+                                <td>{{ m.exp_date }}</td>
+                                <td>{{ m.distributor }}</td>
+                                <td style="max-width:150px; word-break:break-all;"><small><code>{{ m.qr_code_id }}</code></small></td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="6" class="text-center text-muted">No medicines registered yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

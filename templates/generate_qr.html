@@ -4,7 +4,7 @@
 <div class="container-fluid">
     <div class="row">
         {% if not is_public %}
-        <!-- Sidebar -->
+        <!-- Admin Sidebar -->
         <div class="col-md-2 sidebar p-4">
             <h5 class="mb-4"><i class="fa-solid fa-user-shield"></i> Admin Panel</h5>
             <ul class="nav flex-column">
@@ -16,23 +16,78 @@
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_complaints') }}"><i class="fa-solid fa-circle-exclamation"></i> Complaints</a></li>
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_unknown_scans') }}"><i class="fa-solid fa-clock-rotate-left"></i> Pending Registration</a></li>
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_blacklist') }}"><i class="fa-solid fa-ban"></i> Blacklist Management</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_manufacturers') }}"><i class="fa-solid fa-building-shield"></i> Manufacturers</a></li>
 
                 <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </div>
+        {% elif manufacturer %}
+        <!-- Manufacturer Sidebar -->
+        <div class="col-md-2 sidebar p-4">
+            <div class="mb-3">
+                <small class="text-muted d-block">Logged in as</small>
+                <h6 class="text-white mb-1">{{ manufacturer.company_name }}</h6>
+                {% if manufacturer.status == 'verified' %}
+                    <span class="badge bg-success"><i class="fa-solid fa-circle-check"></i> Verified</span>
+                {% elif manufacturer.status == 'pending' %}
+                    <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock"></i> Pending</span>
+                {% endif %}
+            </div>
+            <hr style="border-color: rgba(255,255,255,0.2);">
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('manufacturer_dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link active" href="{{ url_for('register_medicine') }}"><i class="fa-solid fa-qrcode"></i> Generate QR</a></li>
+                <li class="nav-item mt-5"><a class="nav-link text-danger" href="{{ url_for('manufacturer_logout') }}"><i class="fa-solid fa-sign-out-alt"></i> Logout</a></li>
             </ul>
         </div>
         {% endif %}
 
         <!-- Main Content -->
-        <div class="{% if is_public %}col-md-12 p-5{% else %}col-md-10 p-4{% endif %}">
-            <h3 class="mb-4 text-primary text-center">{% if is_public %}Manufacturer Registration Portal{% else %}Generate QR for New Medicine{% endif %}</h3>
+        <div class="{% if is_public and not manufacturer %}col-md-12 p-5{% else %}col-md-10 p-4{% endif %}">
+            <h3 class="mb-4 text-primary text-center">
+                {% if is_public %}
+                    Register Medicine & Generate QR
+                {% else %}
+                    Generate QR for New Medicine
+                {% endif %}
+            </h3>
+
+            {% if manufacturer and manufacturer.status == 'pending' %}
+            <div class="alert alert-warning text-center">
+                <i class="fa-solid fa-clock"></i> 
+                <strong>Note:</strong> Your account is pending verification. QR codes generated now will be marked as 
+                <span class="badge bg-warning text-dark">⚠️ Unverified Manufacturer</span> until your KYC is approved by admin.
+            </div>
+            {% endif %}
             
             <div class="row justify-content-center">
                 <div class="col-md-7">
+                    <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between" style="font-size: 0.85rem; border-radius: 12px; border: 1px dashed #3b82f6;">
+                        <span><i class="fa-solid fa-link me-1"></i> Base URL: <code>{{ base_url }}</code></span>
+                        {% if '127.0.0.1' in base_url or 'localhost' in base_url %}
+                            <span class="text-danger fw-bold"><i class="fa-solid fa-mobile-screen"></i> Not Phone-Friendly</span>
+                        {% else %}
+                            <span class="text-success fw-bold"><i class="fa-solid fa-mobile-screen"></i> Phone-Friendly ✅</span>
+                        {% endif %}
+                    </div>
+
+                    {% if '127.0.0.1' in base_url or 'localhost' in base_url %}
+                    <div class="alert alert-warning py-2 small mb-3" style="border-radius: 12px;">
+                        <i class="fa-solid fa-lightbulb text-warning"></i> 
+                        <strong>Tip:</strong> To scan with a phone, access this site via your Network IP (e.g. <code>http://192.168.x.x:5000</code>).
+                    </div>
+                    {% endif %}
+
                     <div class="glass-card p-4">
                         {% if success %}
                         <div class="alert alert-success mt-3 text-center">
                             <h5><i class="fa-solid fa-check-circle"></i> Medicine Registered Successfully</h5>
                             <p>QR Code ID: <strong>{{ qr_code_id }}</strong></p>
+                            {% if manufacturer and manufacturer.status == 'verified' %}
+                                <span class="badge bg-success"><i class="fa-solid fa-shield-halved"></i> Verified Manufacturer ✅</span>
+                            {% elif manufacturer and manufacturer.status == 'pending' %}
+                                <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock"></i> Unverified — Pending KYC ⏳</span>
+                            {% endif %}
                             <div id="qrcode-container" class="my-4 d-flex justify-content-center"></div>
                             <button class="btn btn-primary" onclick="window.print()"><i class="fa-solid fa-print"></i> Print QR Code</button>
                             <a href="{{ url_for('register_medicine' if is_public else 'generate_qr') }}" class="btn btn-outline-secondary">Register Another</a>
@@ -45,16 +100,25 @@
                             </div>
                             {% endif %}
                         <form method="POST">
+                            {% if manufacturer %}
+                            <div class="alert alert-light border mb-3">
+                                <small class="text-muted">Registering as:</small>
+                                <strong>{{ manufacturer.company_name }}</strong>
+                                <code class="ms-2">{{ manufacturer.drug_license_no }}</code>
+                            </div>
+                            {% endif %}
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label fw-bold">Medicine Name</label>
                                     <input type="text" name="name" class="form-control" required>
                                 </div>
+                                {% if not manufacturer %}
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label fw-bold">Manufacturer</label>
                                     <input type="text" name="manufacturer" class="form-control" required>
                                 </div>
-                                <div class="col-md-12 mb-3">
+                                {% endif %}
+                                <div class="col-md-{% if manufacturer %}6{% else %}12{% endif %} mb-3">
                                     <label class="form-label fw-bold">Distributor Name</label>
                                     <input type="text" name="distributor" class="form-control" required>
                                 </div>
